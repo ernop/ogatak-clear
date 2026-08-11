@@ -68,11 +68,20 @@ replaces it.
    top-level item on the highlights (2026-08-11). Engine effort still
    shows as circle opacity and in the panel's visits column.
 6. **Quality of recent moves** — (respecified 2026-08-11: this is NOT a
-   line graph) a bar chart, one bar per move: up = the move gained points
-   vs the prior estimate, down = it lost points, bar height = the points.
-   Bars colored by who moved (grey = Black's moves, white = White's).
-   This chart answers only "how well were recent moves played"; it says
-   nothing about who is winning. Click a bar to jump to that move.
+   line graph) a bar chart, one bar per move, on a FIXED axis: up always
+   means "White gained points", down always means "Black gained points" —
+   the top is labeled "white gains" and the bottom "black gains" in all
+   cases. Up does NOT mean "the mover gained": since root values assume
+   best play, a mover can only lose points, so White's moves show as
+   height zero (the perfect move) or down-bars, and Black's as zero or
+   up-bars. Bar height = the points. Bars colored by who moved (grey =
+   Black's moves, white = White's). The y scale is toggleable in the
+   chart's own header between linear and log base 2 (position by
+   log2(1 + pts), gridlines at powers of two), so one blunder doesn't
+   flatten every ordinary move; the choice persists in config
+   (`move_report_quality_yscale`). This chart answers only "how well were
+   recent moves played"; it says nothing about who is winning. Click a
+   bar to jump to that move.
 7. **Running game status** — a SEPARATE chart: who was winning at each
    point according to the AI. x = move number, y = score lead, axis ticks
    written as "B+10" / "0" / "W+10", current position marked, filled

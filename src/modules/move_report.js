@@ -83,6 +83,9 @@ function init() {
 		parts.push(`<div class="mr_sechead">`);
 		parts.push(`<span class="mr_sectitle">${SECTION_TITLES[sec]}</span>`);
 		parts.push(`<span class="mr_secctls">`);
+		if (sec === "quality") {
+			parts.push(`<span class="mr_secctl" id="mr_yscale_ctl" data-sec="quality" data-act="yscale" title="Toggle linear / log2 y scale">lin</span>`);
+		}
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="up" title="Move section up">▲</span>`);
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="down" title="Move section down">▼</span>`);
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="hide" title="Hide section">✕</span>`);
@@ -212,6 +215,13 @@ let move_report_prototype = {
 
 	section_action: function(sec, act) {
 
+		if (act === "yscale") {
+			config.move_report_quality_yscale = (config.move_report_quality_yscale === "log2") ? "linear" : "log2";
+			config_io.save();
+			this.draw(hub.node);
+			return;
+		}
+
 		let visible = this.visible_sections();
 		let i = visible.indexOf(sec);
 
@@ -252,6 +262,12 @@ let move_report_prototype = {
 		if (chips !== this.chips_cache) {
 			this.chips.innerHTML = chips;
 			this.chips_cache = chips;
+		}
+
+		let yscale_label = config.move_report_quality_yscale === "log2" ? "log₂" : "lin";
+		let yscale_ctl = document.getElementById("mr_yscale_ctl");
+		if (yscale_ctl.textContent !== yscale_label) {
+			yscale_ctl.textContent = yscale_label;
 		}
 	},
 
@@ -514,8 +530,11 @@ let move_report_prototype = {
 	},
 
 	// ------------------------------------------------------------ quality bar chart
-	// One bar per recent move: up = gained points, down = lost points, from the
-	// MOVER's side. Says nothing about who is winning (that's the status chart).
+	// One bar per recent move, on a FIXED axis: up = the move gained points for
+	// White, down = it gained points for Black (respecified 2026-08-11). Since a
+	// mover can only lose points vs best play, White's moves show as zero or
+	// down-bars, Black's as zero or up-bars. Says nothing about who is winning
+	// (that's the status chart). Y scale is linear or log2, toggled in the header.
 
 	draw_quality: function(node) {
 
@@ -549,33 +568,54 @@ let move_report_prototype = {
 		let n_slots = Math.max(1, end_depth - start_depth + 1);
 		let slot_w = (x1 - x0) / n_slots;
 
-		let deltas = {};									// depth --> signed points, mover POV
+		// Bar values on the fixed axis: positive = White gained, negative = Black
+		// gained. points_delta is mover-POV, so a Black move's delta flips sign
+		// (Black losing points IS White gaining)...
+
+		let w_gains = {};									// depth --> signed points, White-gain POV
 		let y_abs_max = 3;
 		for (let d = start_depth; d <= end_depth; d++) {
 			let delta = this.points_delta(history[d]);
-			deltas[d] = delta;
-			if (delta !== null && Math.abs(delta) > y_abs_max) {
-				y_abs_max = Math.abs(delta);
+			let wg = delta === null ? null : (history[d].has_key("B") ? -delta : delta);
+			w_gains[d] = wg;
+			if (wg !== null && Math.abs(wg) > y_abs_max) {
+				y_abs_max = Math.abs(wg);
 			}
 		}
 
-		// Round the range up to a whole number of gridline steps, so the axis
-		// always has lines at 0, ±step, ... including a labeled top and bottom...
+		// Y scale: linear, or log2 (position by log2(1+|pts|), gridlines at
+		// powers of two) so one blunder doesn't flatten every ordinary move...
 
-		let y_step = y_abs_max <= 3 ? 1 : y_abs_max <= 6 ? 2 : y_abs_max <= 15 ? 5 : 10;
-		let y_max = Math.ceil(y_abs_max / y_step) * y_step;
+		let log_mode = config.move_report_quality_yscale === "log2";
+		let y_max;
+		let ticks = [];			// Positive tick values; each also drawn mirrored.
 
-		let y_of = (v) => y0 + (y1 - y0) * (1 - (v + y_max) / (2 * y_max));
+		if (log_mode) {
+			y_max = Math.pow(2, Math.ceil(Math.log2(Math.max(2, y_abs_max))));
+			for (let v = 1; v <= y_max; v *= 2) {
+				ticks.push(v);
+			}
+		} else {
+			let y_step = y_abs_max <= 3 ? 1 : y_abs_max <= 6 ? 2 : y_abs_max <= 15 ? 5 : 10;
+			y_max = Math.ceil(y_abs_max / y_step) * y_step;
+			for (let v = y_step; v <= y_max; v += y_step) {
+				ticks.push(v);
+			}
+		}
+
+		let t = (v) => log_mode ? Math.sign(v) * Math.log2(1 + Math.abs(v)) : v;
+		let t_max = t(y_max);
+		let y_of = (v) => y0 + (y1 - y0) * (1 - (t(v) + t_max) / (2 * t_max));
 		let y_zero = y_of(0);
 
 		this.quality_click_map = {x0, slot_w, start_depth, end_depth, history};
 
-		// Gridlines and y labels (magnitudes; the regions carry the sign)...
+		// Gridlines and y labels (magnitudes; the regions carry the direction)...
 
 		ctx.font = "11px monospace";
 		ctx.textBaseline = "middle";
 
-		for (let v = 0; v <= y_max; v += y_step) {
+		for (let v of [0, ...ticks]) {
 			for (let sv of (v === 0 ? [0] : [v, -v])) {
 				let y = y_of(sv);
 				ctx.strokeStyle = sv === 0 ? "#555555ff" : "#2c2c2cff";
@@ -593,13 +633,13 @@ let move_report_prototype = {
 		// Bars, colored by mover...
 
 		for (let d = start_depth; d <= end_depth; d++) {
-			let delta = deltas[d];
-			if (delta === null || history[d].move_count() !== 1) {
+			let wg = w_gains[d];
+			if (wg === null || history[d].move_count() !== 1) {
 				continue;
 			}
 			let cx = x0 + (d - start_depth) * slot_w + slot_w / 2;
 			let bar_w = Math.min(18, Math.max(2, slot_w * 0.7));
-			let y_val = y_of(delta);
+			let y_val = y_of(wg);
 			ctx.fillStyle = history[d].has_key("B") ? "#888888ff" : "#ffffffee";
 			ctx.fillRect(cx - bar_w / 2, Math.min(y_zero, y_val), bar_w, Math.max(1, Math.abs(y_val - y_zero)));
 		}
@@ -617,14 +657,14 @@ let move_report_prototype = {
 			}
 		}
 
-		// Region labels...
+		// Region labels: fixed directions, top is always White's, bottom Black's...
 
 		ctx.textAlign = "left";
 		ctx.textBaseline = "middle";
-		ctx.fillStyle = "#99ff99ff";
-		ctx.fillText("gained pts", x0 + 6, y0 + 8);
-		ctx.fillStyle = "#ff8866ff";
-		ctx.fillText("lost pts", x0 + 6, y1 - 8);
+		ctx.fillStyle = "#ffffffff";
+		ctx.fillText("white gains", x0 + 6, y0 + 8);
+		ctx.fillStyle = "#999999ff";
+		ctx.fillText("black gains", x0 + 6, y1 - 8);
 
 		// Current position marker...
 
