@@ -63,7 +63,7 @@ exports.defaults = {
 	"previous_marker": "#ff6666ff",
 	"candidate_moves": true,
 	"no_ponder_no_candidates": false,
-	"numbers": "Winrate + Visits",				// Lame stringly typed
+	"numbers": "Delta",							// Lame stringly typed. Fork default: points vs best available (0 = best), not visits (PRODUCT.md).
 	"visits_threshold": 0.02,
 	"mouseover_pv": true,
 	"mouseover_delay": 0,

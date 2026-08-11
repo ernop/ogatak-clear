@@ -62,7 +62,11 @@ replaces it.
    candidates as a readable table: move, resulting score ("B+2.3"),
    winrate ("B 61%"), visits, and a "costs" column (points worse than the
    top candidate, unsigned, per rule 2). Rows clickable to play the move.
-   (The on-board colored candidate circles are stock behavior, kept.)
+   The on-board colored candidate circles are stock behavior, kept — but
+   the number shown on them is "Delta" (points vs the best available
+   move, 0 = best), NOT visits: the visit count is irrelevant as a
+   top-level item on the highlights (2026-08-11). Engine effort still
+   shows as circle opacity and in the panel's visits column.
 6. **Quality of recent moves** — (respecified 2026-08-11: this is NOT a
    line graph) a bar chart, one bar per move: up = the move gained points
    vs the prior estimate, down = it lost points, bar height = the points.
