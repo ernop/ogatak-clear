@@ -32,6 +32,7 @@ function startup() {
 	global.board_drawer = require("./board_drawer");
 	global.grapher = require("./grapher");
 	global.tree_drawer = require("./tree_drawer");
+	global.move_report = require("./move_report");
 	global.comment_drawer = require("./comment_drawer");
 	global.fullbox = require("./fullbox");
 	global.stderrbox = require("./stderrbox");

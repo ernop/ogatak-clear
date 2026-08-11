@@ -26,6 +26,13 @@
 })();
 
 // ------------------------------------------------------------------------------------------------
+
+(function move_report_spinner() {
+	move_report.draw(hub.node);					// Only touches the DOM if the content changed.
+	setTimeout(move_report_spinner, 199);
+})();
+
+// ------------------------------------------------------------------------------------------------
 // The point of this is to avoid a situation where a draw is slow, while up/down events are piling
 // up, leading to a bunch of draws being required all at once. Instead of that, up/down events just
 // adjust a variable, and this spinner does the actual draws.

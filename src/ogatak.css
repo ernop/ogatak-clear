@@ -133,22 +133,26 @@ body {
 
 /* ----------------------------------------------------------------------------------------------------------------------------------------------- */
 
+/* The strip graph is replaced by the Move Report panel's labeled chart (see PRODUCT.md).
+   Its canvases are hidden, not removed, so the stock grapher code stays intact. */
+
 #graphcanvas {
 	grid-area: graph;
-	display: block;						/* Stops the parent element from being 4px bigger... */
+	display: none;
 	margin: 16px 0 0 0;
 	z-index: 1;
 }
 
 #graphpositioncanvas {
 	grid-area: graph;
-	display: block;						/* Stops the parent element from being 4px bigger... */
+	display: none;
 	margin: 16px 0 0 0;
 	z-index: 2;
 }
 
-#graphhandle {							/* The 8px width replaces what used to be the graph's right margin. */
+#graphhandle {
 	grid-area: ghandle;
+	display: none;
 	cursor: col-resize;
 	pointer-events: auto;
 	width: 8px;
@@ -166,11 +170,164 @@ body.row_dragging, body.row_dragging * {
 
 /* ----------------------------------------------------------------------------------------------------------------------------------------------- */
 
+/* The tree canvas is hidden in favour of the Move Report panel (see PRODUCT.md).
+   Variations still exist and work; they're just not drawn. */
+
 #treecanvas {
 	grid-area: tree;
 	background-color: #111111ff;
-	display: block;
+	display: none;
 	margin: 0;
+}
+
+#movereport {
+	grid-area: tree;
+	background-color: #111111ff;
+	color: #efefefff;
+	font-family: monospace, monospace;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding: 8px 16px 14px 16px;
+	pointer-events: auto;
+	user-select: none;
+}
+
+/* The panel's font-size and #mr_inner's width are set live from config by
+   move_report.js (adjustable via the panel's own controls). Everything
+   below is in em so it scales with the text control. */
+
+#mr_inner {
+	display: flex;
+	flex-direction: column;
+	max-width: 100%;
+}
+
+#mr_controls {
+	color: #666666ff;
+	font-size: 11px;
+	letter-spacing: 1px;
+	margin-bottom: 8px;
+	white-space: nowrap;
+}
+
+.mr_ctlgroup {
+	margin-right: 14px;
+}
+
+.mr_ctl, .mr_secctl, .mr_chip {
+	cursor: pointer;
+	padding: 0 5px;
+}
+
+.mr_ctl:hover, .mr_secctl:hover, .mr_chip:hover {
+	color: #ffffffff;
+	background-color: #222222ff;
+}
+
+.mr_chip {
+	color: #666666ff;
+	margin-right: 8px;
+}
+
+.mr_secbox {
+	margin-bottom: 0.8em;
+}
+
+.mr_sechead {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	color: #e0b872ff;
+	font-size: 0.8em;
+	letter-spacing: 2px;
+	margin-bottom: 0.25em;
+}
+
+.mr_secctls {
+	color: #555555ff;
+	font-size: 10px;
+	letter-spacing: 0;
+}
+
+#movereportchart {
+	display: block;
+	cursor: pointer;
+}
+
+.mr_turn {
+	font-size: 1.45em;
+	font-weight: bold;
+	letter-spacing: 1px;
+}
+
+.mr_stone {
+	width: 1.4em;
+	height: 1.4em;
+	vertical-align: -0.25em;
+}
+
+.mr_lastmove {
+	font-size: 1.2em;
+}
+
+.mr_coord {
+	font-weight: bold;
+}
+
+.mr_verdict {
+	font-size: 1.45em;
+	font-weight: bold;
+	letter-spacing: 1px;
+	margin: 0.1em 0;
+}
+
+.mr_quality {
+	line-height: 1.4;
+}
+
+.mr_dim {
+	color: #999999ff;
+}
+
+.mr_small {
+	font-size: 0.8em;
+	margin-top: 0.3em;
+}
+
+.mr_now {
+	font-weight: bold;
+}
+
+table.mr_outcome {
+	border-collapse: collapse;
+	font-size: 1.1em;
+}
+
+table.mr_outcome td {
+	padding: 0.05em 0.7em 0.05em 0;
+}
+
+table.mr_cands {
+	border-collapse: collapse;
+}
+
+table.mr_cands td {
+	padding: 0.2em 1.6em 0.2em 0;
+	text-align: left;
+	white-space: nowrap;
+}
+
+table.mr_cands tr.mr_head td {
+	color: #e0b872ff;
+	font-size: 0.8em;
+}
+
+table.mr_cands tr.mr_cand {
+	cursor: pointer;
+}
+
+table.mr_cands tr.mr_cand:hover {
+	background-color: #222222ff;
 }
 
 #commentshandle {

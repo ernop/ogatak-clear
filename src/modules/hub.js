@@ -458,6 +458,8 @@ let hub_main_props = {
 			grapher.draw_position(this.node);
 		}
 
+		move_report.draw(this.node);			// The spinner covers ongoing updates; this makes navigation feel snappy.
+
 		tree_drawer.must_draw = true;			// For reasons, this actually is responsible for calling disable_specials_except() to close special panes.
 		comment_drawer.draw(this.node);
 		comment_drawer.textarea.blur();

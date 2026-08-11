@@ -1,3 +1,16 @@
+# ogatak-clear
+
+A fork of [rooklift/ogatak](https://github.com/rooklift/ogatak) focused on one
+thing: making the AI data shown during game review instantly comprehensible.
+No signed numbers whose meaning depends on whose turn it is, no unlabeled
+graphs, no mental translation. The requirements and rationale are in
+[PRODUCT.md](PRODUCT.md); the implementation is mainly
+[src/modules/move_report.js](src/modules/move_report.js).
+
+Everything below this line is the upstream Ogatak README.
+
+---
+
 ![Screenshot](https://github.com/user-attachments/assets/4da9904a-a912-41aa-98f3-c8711e3ebec2)
 
 * Simple analysis GUI for [KataGo](https://github.com/lightvector/KataGo). See [Releases](https://github.com/rooklift/ogatak/releases) for the latest version.

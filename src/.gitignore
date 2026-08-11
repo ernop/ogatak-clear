@@ -1,3 +1,4 @@
 dist/*
 electron_zipped/*
 update_my_installation.py
+node_modules/
