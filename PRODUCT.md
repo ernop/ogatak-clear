@@ -32,6 +32,17 @@ replaces it.
    stone and a word, not inferred from move parity.
 4. **Everything readable at a glance**: real font sizes, labeled axes,
    color-coded verdicts. If an element needs explanation, it failed.
+5. **Candidate values are relative to the best available move from here,
+   never to the global board value.** (added 2026-08-11) If you are losing
+   badly, the question is "from here, what's the best we can do" — the best
+   available move is the reference point and displays as best, not as
+   "very bad because the game is lost".
+6. **Value differences among candidates use one pure green gradient that
+   spends much of its brightness range.** (added 2026-08-11) Best available
+   = brightest green, scaling down by points worse. Moves within ~a point
+   of each other may look similar; a clearly better move must be visibly
+   brighter than the rest. Never a set of identical-looking options when
+   one is clearly better.
 
 ## What a glance at the screen must convey
 
@@ -52,10 +63,19 @@ replaces it.
    winrate ("B 61%"), visits, and a "costs" column (points worse than the
    top candidate, unsigned, per rule 2). Rows clickable to play the move.
    (The on-board colored candidate circles are stock behavior, kept.)
-6. **The game's score history** — a labeled horizontal chart (x = move
-   number, y = score lead) with axis ticks written as "B+10" / "0" /
-   "W+10", the current position marked, filled regions showing who led.
-   Click to jump to a move. This replaces the stock vertical strip graph.
+6. **Quality of recent moves** — (respecified 2026-08-11: this is NOT a
+   line graph) a bar chart, one bar per move: up = the move gained points
+   vs the prior estimate, down = it lost points, bar height = the points.
+   Bars colored by who moved (grey = Black's moves, white = White's).
+   This chart answers only "how well were recent moves played"; it says
+   nothing about who is winning. Click a bar to jump to that move.
+7. **Running game status** — a SEPARATE chart: who was winning at each
+   point according to the AI. x = move number, y = score lead, axis ticks
+   written as "B+10" / "0" / "W+10", current position marked, filled
+   regions showing who led. Click to jump to a move. Together with #6 this
+   replaces the stock vertical strip graph; the two must never be merged,
+   because "was that move good" and "who is winning" are different
+   questions.
 
 ## Layout: adjustable while playing (added 2026-08-11)
 
@@ -66,8 +86,8 @@ table spread its columns across the whole screen. Requirements now:
 1. **The panel content is a fixed-width column** (default 640px), not a
    fluid fill. Empty space to its right is fine; unreadable stretched
    content is not.
-2. **The panel is made of named sections** — `chart`, `turn`, `lastmove`,
-   `outcome`, `options` — each with a small header carrying its own
+2. **The panel is made of named sections** — `quality`, `status`, `turn`,
+   `lastmove`, `outcome`, `options` — each with a small header carrying its own
    controls: move up (▲), move down (▼), hide (✕). Hidden sections appear
    as "+ name" chips in the controls bar, click to restore.
 3. **Sizes are adjustable live from the panel itself**: a dim controls bar

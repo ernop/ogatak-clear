@@ -249,7 +249,7 @@ body.row_dragging, body.row_dragging * {
 	letter-spacing: 0;
 }
 
-#movereportchart {
+.mr_chartcanvas {
 	display: block;
 	cursor: pointer;
 }

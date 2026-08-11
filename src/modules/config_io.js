@@ -85,7 +85,7 @@ exports.defaults = {
 	"move_report_font_size": 15,				// These 4 are adjusted live from the Move Report panel's
 	"move_report_width": 640,					// own controls (see move_report.js / PRODUCT.md), but can
 	"move_report_chart_height": 150,			// also be edited here.
-	"move_report_sections": ["chart", "turn", "lastmove", "outcome", "options"],
+	"move_report_sections": ["quality", "turn", "lastmove", "outcome", "options", "status"],
 
 	"tree_spacing": 24,
 	"tree_off_colour": "#444444ff",

@@ -6,8 +6,13 @@
 //   - No bare signed numbers: every value is labeled with the color it favors
 //     ("B+2.3", "W 61%"). KataGo values arrive in Black POV (see query.js) and
 //     are converted to labeled form HERE, at the display layer, nowhere else.
-//   - Move quality is "points thrown away by the mover", always >= 0.
-//   - The chart has real axes, labeled in the same "B+n"/"W+n" form.
+//   - Move quality is "points thrown away by the mover", always >= 0 in text.
+//   - Candidate values are relative to the best available move from here,
+//     never to the global board value.
+//   - Candidate value differences use one pure green gradient, brightest =
+//     best available, spending a wide brightness range.
+//   - Two charts, never merged: "quality" (per-move bars: how well was each
+//     recent move played) and "status" (who was winning at each point).
 //
 // The panel is made of named sections. Their order and visibility live in
 // config.move_report_sections; sizes live in config.move_report_font_size /
@@ -17,7 +22,8 @@
 const config_io = require("./config_io");
 
 const SECTION_TITLES = {
-	chart:    "SCORE CHART",
+	quality:  "MOVE QUALITY",
+	status:   "GAME STATUS",
 	turn:     "TURN",
 	lastmove: "LAST MOVE",
 	outcome:  "OUTCOME",
@@ -25,6 +31,7 @@ const SECTION_TITLES = {
 };
 
 const ALL_SECTIONS = Object.keys(SECTION_TITLES);
+const CHART_SECTIONS = ["quality", "status"];
 
 const VERDICTS = [
 	// [max points lost (exclusive), label, colour]
@@ -34,6 +41,12 @@ const VERDICTS = [
 	[6.0, "MISTAKE",    "#ffaa44ff"],
 	[Infinity, "BLUNDER", "#ff5555ff"],
 ];
+
+// Green gradient endpoints for candidate values (rule: pure green, wide
+// brightness range, brightest = best available from here)...
+
+const GREEN_BRIGHT = [102, 255, 102];
+const GREEN_DARK = [30, 85, 30];
 
 const LIMITS = {
 	move_report_font_size:    {min: 9,   max: 28,   step: 1},
@@ -51,7 +64,7 @@ function init() {
 	let outer = document.getElementById("movereport");
 
 	// Build the skeleton: a controls bar, then one box per section. Sections are
-	// reordered via flexbox "order", so the DOM (and the canvas) stays stable...
+	// reordered via flexbox "order", so the DOM (and the canvases) stays stable...
 
 	let parts = [];
 
@@ -73,8 +86,8 @@ function init() {
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="hide" title="Hide section">✕</span>`);
 		parts.push(`</span>`);
 		parts.push(`</div>`);
-		if (sec === "chart") {
-			parts.push(`<div class="mr_seccontent" id="mr_seccontent_chart"><canvas id="movereportchart"></canvas></div>`);
+		if (CHART_SECTIONS.includes(sec)) {
+			parts.push(`<div class="mr_seccontent"><canvas class="mr_chartcanvas" id="mr_canvas_${sec}"></canvas></div>`);
 		} else {
 			parts.push(`<div class="mr_seccontent" id="mr_seccontent_${sec}"></div>`);
 		}
@@ -89,12 +102,16 @@ function init() {
 		outer: outer,
 		inner: document.getElementById("mr_inner"),
 		chips: document.getElementById("mr_hidden_chips"),
-		canvas: document.getElementById("movereportchart"),
-		ctx: document.getElementById("movereportchart").getContext("2d"),
+
+		quality_canvas: document.getElementById("mr_canvas_quality"),
+		quality_ctx: document.getElementById("mr_canvas_quality").getContext("2d"),
+		status_canvas: document.getElementById("mr_canvas_status"),
+		status_ctx: document.getElementById("mr_canvas_status").getContext("2d"),
 
 		content_cache: {},			// section name --> last html set
 		chips_cache: "",
-		click_map: null,			// Chart geometry for click-to-navigate.
+		quality_click_map: null,	// Chart geometries for click-to-navigate.
+		status_click_map: null,
 
 	});
 
@@ -132,9 +149,17 @@ function init() {
 		}
 	});
 
-	ret.canvas.addEventListener("mousedown", (event) => {
+	ret.quality_canvas.addEventListener("mousedown", (event) => {
 		event.preventDefault();
-		let node = ret.node_from_click(event.offsetX);
+		let node = ret.node_from_quality_click(event.offsetX);
+		if (node) {
+			hub.set_node(node, {bless: false});
+		}
+	});
+
+	ret.status_canvas.addEventListener("mousedown", (event) => {
+		event.preventDefault();
+		let node = ret.node_from_status_click(event.offsetX);
 		if (node) {
 			hub.set_node(node, {bless: false});
 		}
@@ -254,12 +279,19 @@ let move_report_prototype = {
 		}
 	},
 
-	// Points thrown away by the move leading into this node, vs best play.
-	// Root scores assume best play, so (parent - child), from the mover's side,
-	// is exactly "how much worse than best". Works from stored SGF tags too.
-	// Returns null if unknowable.
+	green: function(cost, cap) {					// cost 0 --> brightest, cost >= cap --> darkest
+		let t = Math.min(1, Math.max(0, cost / cap));
+		let c = GREEN_BRIGHT.map((b, i) => Math.round(b + (GREEN_DARK[i] - b) * t));
+		return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+	},
 
-	points_lost: function(node) {
+	// Signed points change caused by the move leading into this node, from the
+	// MOVER's side: negative = the move lost points vs best play, positive = the
+	// position turned out better than the prior estimate. Root scores assume
+	// best play, so (child - parent) from the mover's side is exactly this.
+	// Works from stored SGF tags too. Returns null if unknowable.
+
+	points_delta: function(node) {
 		if (!node.parent || node.move_count() !== 1) {
 			return null;
 		}
@@ -268,9 +300,16 @@ let move_report_prototype = {
 		if (typeof parent_score !== "number" || typeof score !== "number") {
 			return null;
 		}
-		let lost_bpov = parent_score - score;
-		let lost = node.has_key("B") ? lost_bpov : -lost_bpov;
-		return Math.max(0, lost);
+		let delta_bpov = score - parent_score;
+		return node.has_key("B") ? delta_bpov : -delta_bpov;
+	},
+
+	points_lost: function(node) {					// Always >= 0, for the verdict text.
+		let delta = this.points_delta(node);
+		if (delta === null) {
+			return null;
+		}
+		return Math.max(0, -delta);
 	},
 
 	// ------------------------------------------------------------ main draw
@@ -286,8 +325,10 @@ let move_report_prototype = {
 		let visible = this.visible_sections();
 
 		for (let sec of visible) {
-			if (sec === "chart") {
-				this.draw_chart(node);
+			if (sec === "quality") {
+				this.draw_quality(node);
+			} else if (sec === "status") {
+				this.draw_status(node);
 			} else {
 				let html = this[`html_${sec}`](node);
 				if (html !== this.content_cache[sec]) {
@@ -396,34 +437,46 @@ let move_report_prototype = {
 
 	html_options: function(node) {
 
-		let board = node.get_board();
 		let parts = [];
 
 		if (node.has_valid_analysis()) {
 
 			let infos = node.analysis.moveInfos.slice(0, 6);
 			let best_lead = infos.length > 0 ? infos[0].scoreLead : null;
+			let active_is_b = node.get_board().active === "b";
+
+			// Costs are vs the best AVAILABLE move (infos[0]), never vs the
+			// global board value: if we're losing badly, the best we can do
+			// from here is the reference point (PRODUCT.md rule 5)...
+
+			let costs = infos.map(info => {
+				if (typeof best_lead !== "number" || typeof info.scoreLead !== "number") {
+					return null;
+				}
+				let c = active_is_b ? best_lead - info.scoreLead : info.scoreLead - best_lead;
+				return Math.max(0, c);
+			});
+
+			// Gradient cap: worst displayed cost, floored at 2 pts so near-equal
+			// options stay near-equal in color (PRODUCT.md rule 6)...
+
+			let cap = Math.max(2, ...costs.filter(c => c !== null));
 
 			parts.push(`<table class="mr_cands">`);
 			parts.push(`<tr class="mr_head"><td>move</td><td>score</td><td>win</td><td>costs</td><td>visits</td></tr>`);
 
-			for (let info of infos) {
+			for (let i = 0; i < infos.length; i++) {
 
-				let cost = "";
-				let cost_colour = "#efefefff";
-				if (typeof best_lead === "number" && typeof info.scoreLead === "number") {
-					let c = board.active === "b" ? best_lead - info.scoreLead : info.scoreLead - best_lead;
-					c = Math.max(0, c);
-					cost = c.toFixed(1);
-					cost_colour = this.verdict(c)[1];
-				}
+				let info = infos[i];
+				let colour = costs[i] === null ? "#efefefff" : this.green(costs[i], cap);
+				let cost_str = costs[i] === null ? "" : costs[i].toFixed(1);
 
 				parts.push(
 					`<tr class="mr_cand" data-gtp="${info.move}">` +
-					`<td class="mr_coord" style="color: ${cost_colour}">${info.move}</td>` +
+					`<td class="mr_coord" style="color: ${colour}">${info.move}</td>` +
 					`<td>${this.fmt_score(info.scoreLead)}</td>` +
 					`<td>${this.fmt_winrate(info.winrate)}</td>` +
-					`<td style="color: ${cost_colour}">${cost}</td>` +
+					`<td style="color: ${colour}">${cost_str}</td>` +
 					`<td class="mr_dim">${this.fmt_visits(info.visits)}</td>` +
 					`</tr>`
 				);
@@ -441,20 +494,27 @@ let move_report_prototype = {
 		return parts.join("\n");
 	},
 
-	// ------------------------------------------------------------ score history chart
+	// ------------------------------------------------------------ chart shared bits
 
-	draw_chart: function(node) {
-
-		let canvas = this.canvas;
-		let ctx = this.ctx;
-
-		let want_width = Math.max(0, this.canvas.parentElement.clientWidth);
+	size_canvas: function(canvas) {
+		let want_width = Math.max(0, canvas.parentElement.clientWidth);
 		let want_height = config.move_report_chart_height;
 		if (canvas.width !== want_width || canvas.height !== want_height) {
 			canvas.width = want_width;
 			canvas.height = want_height;
 		}
+	},
 
+	// ------------------------------------------------------------ quality bar chart
+	// One bar per recent move: up = gained points, down = lost points, from the
+	// MOVER's side. Says nothing about who is winning (that's the status chart).
+
+	draw_quality: function(node) {
+
+		let canvas = this.quality_canvas;
+		let ctx = this.quality_ctx;
+
+		this.size_canvas(canvas);
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 		let x0 = CHART_PAD_LEFT;
@@ -463,14 +523,156 @@ let move_report_prototype = {
 		let y1 = canvas.height - CHART_PAD_BOTTOM;
 
 		if (x1 - x0 < 40) {
-			this.click_map = null;
+			this.quality_click_map = null;
 			return;
 		}
 
 		ctx.fillStyle = "#181818ff";
 		ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
 
-		// Data: the current line of play, scores in Black POV...
+		let history = node.get_end().history();
+
+		// Window: as many recent moves as fit at a readable bar spacing,
+		// ending at the end of the current line...
+
+		let end_depth = history.length - 1;
+		let max_bars = Math.max(5, Math.floor((x1 - x0) / 12));
+		let start_depth = Math.max(1, end_depth - max_bars + 1);
+		let n_slots = Math.max(1, end_depth - start_depth + 1);
+		let slot_w = (x1 - x0) / n_slots;
+
+		let deltas = {};									// depth --> signed points, mover POV
+		let y_abs_max = 3;
+		for (let d = start_depth; d <= end_depth; d++) {
+			let delta = this.points_delta(history[d]);
+			deltas[d] = delta;
+			if (delta !== null && Math.abs(delta) > y_abs_max) {
+				y_abs_max = Math.abs(delta);
+			}
+		}
+
+		// Round the range up to a whole number of gridline steps, so the axis
+		// always has lines at 0, ±step, ... including a labeled top and bottom...
+
+		let y_step = y_abs_max <= 3 ? 1 : y_abs_max <= 6 ? 2 : y_abs_max <= 15 ? 5 : 10;
+		let y_max = Math.ceil(y_abs_max / y_step) * y_step;
+
+		let y_of = (v) => y0 + (y1 - y0) * (1 - (v + y_max) / (2 * y_max));
+		let y_zero = y_of(0);
+
+		this.quality_click_map = {x0, slot_w, start_depth, end_depth, history};
+
+		// Gridlines and y labels (magnitudes; the regions carry the sign)...
+
+		ctx.font = "11px monospace";
+		ctx.textBaseline = "middle";
+
+		for (let v = 0; v <= y_max; v += y_step) {
+			for (let sv of (v === 0 ? [0] : [v, -v])) {
+				let y = y_of(sv);
+				ctx.strokeStyle = sv === 0 ? "#555555ff" : "#2c2c2cff";
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.moveTo(x0, y);
+				ctx.lineTo(x1, y);
+				ctx.stroke();
+				ctx.fillStyle = "#e0b872ff";
+				ctx.textAlign = "right";
+				ctx.fillText(v.toString(), x0 - 5, y);
+			}
+		}
+
+		// Bars, colored by mover...
+
+		for (let d = start_depth; d <= end_depth; d++) {
+			let delta = deltas[d];
+			if (delta === null || history[d].move_count() !== 1) {
+				continue;
+			}
+			let cx = x0 + (d - start_depth) * slot_w + slot_w / 2;
+			let bar_w = Math.min(18, Math.max(2, slot_w * 0.7));
+			let y_val = y_of(delta);
+			ctx.fillStyle = history[d].has_key("B") ? "#888888ff" : "#ffffffee";
+			ctx.fillRect(cx - bar_w / 2, Math.min(y_zero, y_val), bar_w, Math.max(1, Math.abs(y_val - y_zero)));
+		}
+
+		// X labels (move numbers)...
+
+		let x_step = n_slots <= 25 ? 5 : 10;
+
+		ctx.fillStyle = "#e0b872ff";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "top";
+		for (let d = start_depth; d <= end_depth; d++) {
+			if (d % x_step === 0) {
+				ctx.fillText(d.toString(), x0 + (d - start_depth) * slot_w + slot_w / 2, y1 + 5);
+			}
+		}
+
+		// Region labels...
+
+		ctx.textAlign = "left";
+		ctx.textBaseline = "middle";
+		ctx.fillStyle = "#99ff99ff";
+		ctx.fillText("gained pts", x0 + 6, y0 + 8);
+		ctx.fillStyle = "#ff8866ff";
+		ctx.fillText("lost pts", x0 + 6, y1 - 8);
+
+		// Current position marker...
+
+		if (node.depth >= start_depth && node.depth <= end_depth) {
+			let cx = x0 + (node.depth - start_depth) * slot_w + slot_w / 2;
+			ctx.strokeStyle = "#ffff99ff";
+			ctx.lineWidth = 1;
+			ctx.beginPath();
+			ctx.moveTo(cx, y0);
+			ctx.lineTo(cx, y1);
+			ctx.stroke();
+		}
+	},
+
+	node_from_quality_click: function(mousex) {
+
+		if (!this.quality_click_map) {
+			return null;
+		}
+
+		let {x0, slot_w, start_depth, end_depth, history} = this.quality_click_map;
+
+		let depth = start_depth + Math.floor((mousex - x0) / slot_w);
+		if (depth < start_depth) depth = start_depth;
+		if (depth > end_depth) depth = end_depth;
+
+		let node = history[depth];
+		if (!node || node.destroyed) {
+			return null;
+		}
+		return node;
+	},
+
+	// ------------------------------------------------------------ game status chart
+	// Who was winning at each point: the current line of play, scores Black-POV.
+
+	draw_status: function(node) {
+
+		let canvas = this.status_canvas;
+		let ctx = this.status_ctx;
+
+		this.size_canvas(canvas);
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+		let x0 = CHART_PAD_LEFT;
+		let x1 = canvas.width - CHART_PAD_RIGHT;
+		let y0 = CHART_PAD_TOP;
+		let y1 = canvas.height - CHART_PAD_BOTTOM;
+
+		if (x1 - x0 < 40) {
+			this.status_click_map = null;
+			return;
+		}
+
+		ctx.fillStyle = "#181818ff";
+		ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
 
 		let history = node.get_end().history();
 		let scores = history.map(n => n.stored_score());
@@ -483,31 +685,37 @@ let move_report_prototype = {
 				abs_max = Math.abs(sc);
 			}
 		}
-		let y_max = Math.ceil(abs_max / 5) * 5;						// Symmetric range: +y_max (B) .. -y_max (W)
+
+		// Round the range up to a whole number of gridline steps, so the axis
+		// always has lines at 0, ±step, ... including a labeled top and bottom.
+		// Symmetric range: +y_max (B) .. -y_max (W)...
+
+		let y_step = abs_max <= 10 ? 5 : abs_max <= 20 ? 10 : abs_max <= 60 ? 20 : 50;
+		let y_max = Math.ceil(abs_max / y_step) * y_step;
 
 		let x_of = (depth) => x0 + (x1 - x0) * depth / depth_max;
 		let y_of = (score) => y0 + (y1 - y0) * (1 - (score + y_max) / (2 * y_max));
 
-		this.click_map = {x0, x1, depth_max, history};
+		this.status_click_map = {x0, x1, depth_max, history};
 
 		// Axes and gridlines...
-
-		let y_step = y_max <= 10 ? 5 : y_max <= 20 ? 10 : y_max <= 50 ? 25 : 50;
 
 		ctx.font = "11px monospace";
 		ctx.textBaseline = "middle";
 
-		for (let v = -y_max; v <= y_max; v += y_step) {
-			let y = y_of(v);
-			ctx.strokeStyle = v === 0 ? "#555555ff" : "#2c2c2cff";
-			ctx.lineWidth = 1;
-			ctx.beginPath();
-			ctx.moveTo(x0, y);
-			ctx.lineTo(x1, y);
-			ctx.stroke();
-			ctx.fillStyle = "#e0b872ff";
-			ctx.textAlign = "right";
-			ctx.fillText(v === 0 ? "0" : (v > 0 ? `B+${v}` : `W+${-v}`), x0 - 5, y);
+		for (let v = 0; v <= y_max; v += y_step) {
+			for (let sv of (v === 0 ? [0] : [v, -v])) {
+				let y = y_of(sv);
+				ctx.strokeStyle = sv === 0 ? "#555555ff" : "#2c2c2cff";
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.moveTo(x0, y);
+				ctx.lineTo(x1, y);
+				ctx.stroke();
+				ctx.fillStyle = "#e0b872ff";
+				ctx.textAlign = "right";
+				ctx.fillText(sv === 0 ? "0" : (sv > 0 ? `B+${sv}` : `W+${-sv}`), x0 - 5, y);
+			}
 		}
 
 		let x_step = depth_max <= 60 ? 10 : depth_max <= 150 ? 25 : 50;
@@ -607,13 +815,13 @@ let move_report_prototype = {
 		ctx.fillText(`#${node.depth}`, cx + (cx > (x0 + x1) / 2 ? -4 : 4), y0 + 2);
 	},
 
-	node_from_click: function(mousex) {
+	node_from_status_click: function(mousex) {
 
-		if (!this.click_map) {
+		if (!this.status_click_map) {
 			return null;
 		}
 
-		let {x0, x1, depth_max, history} = this.click_map;
+		let {x0, x1, depth_max, history} = this.status_click_map;
 
 		let depth = Math.round((mousex - x0) / (x1 - x0) * depth_max);
 		if (depth < 0) depth = 0;
