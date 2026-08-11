@@ -3,7 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const {ipcRenderer} = require("electron");
+const {ipcRenderer, webFrame} = require("electron");
 const {defaults} = require("./config_io");
 const {translate} = require("./translate");
 const {deep_equals} = require("./utils");
@@ -294,6 +294,16 @@ module.exports = {
 			}
 			break;
 
+		case "zoom_factor":
+
+			// Fork addition: whole-UI zoom. The board recomputes its square size
+			// from the (zoom-shrunk) viewport on the next draw, so it keeps its
+			// max physical size while all text and panels scale.
+
+			webFrame.setZoomFactor(value);
+			this.draw();
+			break;
+
 		}
 
 		// Various fixes to menu items and suchlike................................................
@@ -338,6 +348,20 @@ module.exports = {
 			this.fix_visit_filter_menu();
 		}
 
+	},
+
+	// --------------------------------------------------------------------------------------------
+
+	zoom_in: function() {
+		this.set("zoom_factor", Math.min(3, Math.round(config.zoom_factor * 1.1 * 100) / 100));
+	},
+
+	zoom_out: function() {
+		this.set("zoom_factor", Math.max(0.5, Math.round(config.zoom_factor / 1.1 * 100) / 100));
+	},
+
+	zoom_reset: function() {
+		this.set("zoom_factor", 1.0);
 	},
 
 	// --------------------------------------------------------------------------------------------

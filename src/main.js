@@ -1743,6 +1743,30 @@ function menu_build() {
 			label: translate("MENU_SIZES"),
 			submenu: [
 				{
+					label: "UI zoom in",				// Fork addition: whole-UI zoom, like a browser.
+					accelerator: "CommandOrControl+=",
+					click: () => {
+						win.webContents.send("call", "zoom_in");
+					}
+				},
+				{
+					label: "UI zoom out",
+					accelerator: "CommandOrControl+-",
+					click: () => {
+						win.webContents.send("call", "zoom_out");
+					}
+				},
+				{
+					label: "UI zoom reset",				// Ctrl+0 is taken by Tools -> Labels 123.
+					accelerator: "CommandOrControl+Shift+0",
+					click: () => {
+						win.webContents.send("call", "zoom_reset");
+					}
+				},
+				{
+					type: "separator"
+				},
+				{
 					label: translate("MENU_EMBIGGEN_SMALL_BOARDS"),
 					type: "checkbox",
 					checked: config.embiggen_small_boards,

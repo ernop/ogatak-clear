@@ -27,6 +27,8 @@ function startup() {
 		ipcRenderer.send("alert", stringify(msg));
 	};
 
+	require("electron").webFrame.setZoomFactor(config.zoom_factor);		// Fork addition: whole-UI zoom.
+
 	global.hub = require("./hub");
 	global.tabber = require("./tabber_v2");
 	global.board_drawer = require("./board_drawer");
