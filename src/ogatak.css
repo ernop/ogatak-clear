@@ -203,20 +203,20 @@ body.row_dragging, body.row_dragging * {
 }
 
 #mr_controls {
-	color: #666666ff;
-	font-size: 11px;
+	color: #888888ff;
+	font-size: 0.9em;
 	letter-spacing: 1px;
 	margin-bottom: 8px;
 	white-space: nowrap;
 }
 
 .mr_ctlgroup {
-	margin-right: 14px;
+	margin-right: 16px;
 }
 
 .mr_ctl, .mr_secctl, .mr_chip {
 	cursor: pointer;
-	padding: 0 5px;
+	padding: 2px 9px;
 }
 
 .mr_ctl:hover, .mr_secctl:hover, .mr_chip:hover {
@@ -244,8 +244,8 @@ body.row_dragging, body.row_dragging * {
 }
 
 .mr_secctls {
-	color: #555555ff;
-	font-size: 10px;
+	color: #888888ff;
+	font-size: 1.1em;
 	letter-spacing: 0;
 }
 
