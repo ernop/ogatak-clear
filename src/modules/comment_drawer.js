@@ -2,7 +2,6 @@
 
 function init() {
 	let ret = Object.assign(Object.create(comment_drawer_prototype), {
-		gridder: document.getElementById("gridder_tree_comments"),
 		textarea: document.getElementById("comments"),
 		handle: document.getElementById("commentshandle"),
 		handle_dragging: false,							// Used in __start_spinners.js. These 4 are for the
@@ -60,7 +59,9 @@ let comment_drawer_prototype = {
 	},
 
 	apply_height: function() {							// Apply config.comment_box_height
-		this.gridder.style["grid-template-rows"] = `minmax(0, 1fr) min-content minmax(0, ${Math.max(0, config.comment_box_height)}px)`;
+		// Fork change: the textarea lives inside the Move Report panel's comments
+		// section, so the height applies to the textarea itself, not to grid rows.
+		this.textarea.style.height = Math.max(0, config.comment_box_height).toString() + "px";
 	}
 };
 

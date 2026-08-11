@@ -81,33 +81,51 @@ replaces it.
    because "was that move good" and "who is winning" are different
    questions.
 
-## Layout: adjustable while playing (added 2026-08-11)
+## Layout: the panel owns the whole right side (respecified 2026-08-11)
 
 The first implementation let the panel stretch across whatever width the
 window had; on a wide monitor the chart became a ribbon and the options
-table spread its columns across the whole screen. Requirements now:
+table spread its columns across the whole screen. The second fixed the
+content width but left the panel inside the stock grid, which reserved a
+permanent bottom strip for the comments box — so growing the content (or
+zooming) squeezed the panel into a small box surrounded by dead space.
+Requirements now:
 
-1. **The panel content is a fixed-width column** (default 640px), not a
-   fluid fill. Empty space to its right is fine; unreadable stretched
-   content is not.
-2. **The panel is made of named sections** — `quality`, `status`, `turn`,
-   `lastmove`, `outcome`, `options` — each with a small header carrying its own
-   controls: move up (▲), move down (▼), hide (✕). Hidden sections appear
-   as "+ name" chips in the controls bar, click to restore.
-3. **Sizes are adjustable live from the panel itself**: a dim controls bar
-   at the top offers text −/+ (font size), width −/+ (column width), and
+1. **The panel container is everything right of the board, top to bottom,
+   out to the window edge.** Nothing else reserves space in that region,
+   and it re-flows on every window resize and zoom change. (The stock
+   comments box used to reserve up to 256px of height at all times, even
+   empty; it no longer can — see 3.)
+2. **Sections are fixed-width cards in a wrapping flow.** Each card is
+   `move_report_width` wide (default 640px, live-adjustable). On a wide
+   panel, cards sit side by side and fill the width; on a narrow one they
+   stack into a single scrollable column. Readable width everywhere, no
+   stretched ribbons, no reserved dead space.
+3. **The SGF comments box is a section** (`comments`) like any other:
+   orderable, hideable, restorable from a chip. The stock comment drawer
+   still owns the textarea's content; `comment_box_height` (Sizes menu)
+   now sets the textarea's own height instead of carving a grid row out
+   of the panel's space.
+4. **Named sections, each with its own controls** — `quality`, `status`,
+   `turn`, `lastmove`, `outcome`, `options`, `comments` — header buttons:
+   move up (▲), move down (▼), hide (✕). Hidden sections appear as
+   "+ name" chips in the controls bar, click to restore.
+5. **Sizes are adjustable live from the panel itself**: a dim controls bar
+   at the top offers text −/+ (font size), width −/+ (card width), and
    chart −/+ (chart height). No dialog, no restart, no menu digging.
-4. **Every adjustment persists immediately** to Ogatak's `config.json`:
+6. **Every adjustment persists immediately** to Ogatak's `config.json`:
    `move_report_font_size`, `move_report_width`, `move_report_chart_height`,
    `move_report_sections` (an ordered array of the visible sections).
    Editing `config.json` by hand is an equally supported path — the array
    IS the template: reorder it, delete from it, and that's the layout.
-5. **All text sizes are em-based** so the single font-size control scales
+7. **All text sizes are em-based** so the single font-size control scales
    the whole panel coherently.
 
 Implementation: sections are stable DOM boxes reordered via flexbox
-`order` (the chart canvas is never rebuilt); section content is diffed as
-html strings and only written on change.
+`order` in a `row wrap` flow (the chart canvases are never rebuilt);
+section content is diffed as html strings and only written on change. The
+comments textarea keeps its stock id and is adopted into its card at
+startup, so the stock comment drawer and input handlers are untouched.
 
 ## What is removed
 
@@ -116,6 +134,9 @@ html strings and only written on change.
   canvas is hidden; variations still work, they're just not drawn.
 - The **vertical winrate strip** next to the board and its drag handle:
   replaced by the labeled chart in the panel.
+- The **comments box drag handle and its reserved grid rows**: comments
+  are a panel section now; their height is a size setting, not a
+  permanent claim on the panel's space.
 
 ## Data notes (for implementers)
 

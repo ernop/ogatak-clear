@@ -40,17 +40,19 @@ body {
 		"board graph ghandle";
 }
 
+/* Fork change: the right column is a single full-height cell owned by the Move
+   Report panel. The comments box is a section INSIDE the panel now, so nothing
+   reserves fixed rows here (the stock 3-row template starved the panel). */
+
 #gridder_tree_comments {
 	background-color: #111111ff;
 	display: grid;
 	grid-area: t_c;
 	height: 100vh;
 	grid-template-columns: 1fr;
-	grid-template-rows: minmax(0, 1fr) min-content minmax(0, 256px);	/* Last row is set from JS (comment_drawer) to match config.comment_box_height */
+	grid-template-rows: minmax(0, 1fr);
 	grid-template-areas:
-		"tree"
-		"chandle"
-		"comments";
+		"tree";
 }
 
 /* ----------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -192,14 +194,21 @@ body.row_dragging, body.row_dragging * {
 	user-select: none;
 }
 
-/* The panel's font-size and #mr_inner's width are set live from config by
-   move_report.js (adjustable via the panel's own controls). Everything
-   below is in em so it scales with the text control. */
+/* The panel's font-size and each section card's width are set live from config
+   by move_report.js (adjustable via the panel's own controls). Everything
+   below is in em so it scales with the text control.
+
+   Sections are cards in a wrapping flex flow: on a wide panel they sit side by
+   side using the full width; on a narrow one they stack. "order" reorders them
+   through the flow. */
 
 #mr_inner {
 	display: flex;
-	flex-direction: column;
-	max-width: 100%;
+	flex-flow: row wrap;
+	align-content: flex-start;
+	align-items: flex-start;
+	column-gap: 28px;
+	width: 100%;
 }
 
 #mr_controls {
@@ -231,6 +240,8 @@ body.row_dragging, body.row_dragging * {
 
 .mr_secbox {
 	margin-bottom: 0.8em;
+	max-width: 100%;
+	/* width is set from config.move_report_width by move_report.js */
 }
 
 .mr_sechead {
@@ -331,19 +342,15 @@ table.mr_cands tr.mr_cand:hover {
 }
 
 #commentshandle {
-	grid-area: chandle;
-	background-color: #111111ff;
-	cursor: row-resize;
-	height: 8px;
-	pointer-events: auto;
+	display: none;			/* Fork change: comments live inside the Move Report panel; no drag handle. */
 }
 
 #comments {
 	border: none;
-	grid-area: comments;
 	color: #ffffffff;
 	cursor: auto;
 	background-color: #181818ff;
+	box-sizing: border-box;
 	font-family: monospace, monospace;
 	margin: 0;
 	overflow-x: hidden;
@@ -352,6 +359,7 @@ table.mr_cands tr.mr_cand:hover {
 	pointer-events: auto;
 	resize: none;
 	white-space: pre-wrap;
+	width: 100%;
 }
 
 #comments:focus {

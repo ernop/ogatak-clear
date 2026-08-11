@@ -28,10 +28,12 @@ const SECTION_TITLES = {
 	lastmove: "LAST MOVE",
 	outcome:  "OUTCOME",
 	options:  "NEXT MOVE OPTIONS",
+	comments: "COMMENTS",
 };
 
 const ALL_SECTIONS = Object.keys(SECTION_TITLES);
 const CHART_SECTIONS = ["quality", "status"];
+const HTML_SECTIONS = ["turn", "lastmove", "outcome", "options"];		// Rendered via html_* methods; "comments" hosts the stock textarea instead.
 
 const VERDICTS = [
 	// [max points lost (exclusive), label, colour]
@@ -96,6 +98,11 @@ function init() {
 	parts.push(`</div>`);
 
 	outer.innerHTML = parts.join("\n");
+
+	// Adopt the stock comments textarea into our comments section. It keeps its
+	// id, so comment_drawer and the input handlers keep working untouched.
+
+	document.getElementById("mr_seccontent_comments").appendChild(document.getElementById("comments"));
 
 	let ret = Object.assign(Object.create(move_report_prototype), {
 
@@ -226,7 +233,6 @@ let move_report_prototype = {
 	apply_layout: function() {
 
 		this.outer.style.fontSize = config.move_report_font_size.toString() + "px";
-		this.inner.style.width = config.move_report_width.toString() + "px";
 
 		let visible = this.visible_sections();
 
@@ -235,6 +241,7 @@ let move_report_prototype = {
 			let i = visible.indexOf(sec);
 			box.style.display = (i === -1) ? "none" : "";
 			box.style.order = i.toString();
+			box.style.width = config.move_report_width.toString() + "px";		// Cards wrap side by side when the panel is wide.
 		}
 
 		let chips = ALL_SECTIONS
@@ -329,13 +336,14 @@ let move_report_prototype = {
 				this.draw_quality(node);
 			} else if (sec === "status") {
 				this.draw_status(node);
-			} else {
+			} else if (HTML_SECTIONS.includes(sec)) {
 				let html = this[`html_${sec}`](node);
 				if (html !== this.content_cache[sec]) {
 					document.getElementById(`mr_seccontent_${sec}`).innerHTML = html;
 					this.content_cache[sec] = html;
 				}
 			}
+			// "comments" needs no drawing here: comment_drawer owns the textarea inside it.
 		}
 	},
 
