@@ -1724,6 +1724,16 @@ function menu_build() {
 					label: translate("MENU_COLOURS"),
 					submenu: colour_choices_submenu(),
 				},
+				{
+					type: "separator",
+				},
+				{
+					label: "Fullscreen",				// Fork addition: on wide monitors the board is height-limited, so every vertical pixel counts.
+					accelerator: "Alt+Return",
+					click: () => {
+						win.setFullScreen(!win.isFullScreen());
+					}
+				},
 			]
 		},
 
