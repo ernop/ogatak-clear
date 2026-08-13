@@ -112,6 +112,7 @@ translations[`English`] = {
 		MENU_VISIT_FILTER: `Visit filter`,
 			MENU_ALL: `All`,
 		MENU_CANDIDATE_FILTER: `Candidate moves: points from best`,
+		MENU_ALWAYS_SHOW_NEXT_MOVE_EVAL: `Always show next-move eval`,
 		MENU_GRADIENT: `Gradient`,
 		MENU_NUMBERS: `Numbers`,
 			MENU_NUM_WINRATE: `Winrate`,

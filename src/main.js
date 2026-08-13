@@ -62,22 +62,14 @@ electron.app.on("second-instance", (event, commandLine, workingDirectory, additi
 
 electron.app.whenReady().then(() => {					// If "ready" event already happened, whenReady() fulfills immediately.
 
-	let desired_zoomfactor = 1 / electron.screen.getPrimaryDisplay().scaleFactor;
-
-	// If this appears to be first run, and the user is on a high-res display, adjust width and height...
-
-	if (desired_zoomfactor !== 1 && !config_io.pre_existed) {
-		let wa = electron.screen.getPrimaryDisplay().workAreaSize;
-		let max_width = Math.floor((wa.width - 16) / desired_zoomfactor);
-		let max_height = Math.floor((wa.height - 80) / desired_zoomfactor);
-
-		config.width = Math.min(Math.round(config_io.defaults.width / desired_zoomfactor), max_width);
-		config.height = Math.min(Math.round(config_io.defaults.height / desired_zoomfactor), max_height);
-	}
+	// Electron already expresses BrowserWindow dimensions in display-independent
+	// pixels. UI zoom is an application preference, not the inverse of the
+	// monitor's OS scale.
+	let desired_zoomfactor = config.zoom_factor;
 
 	win = new electron.BrowserWindow({
-		width: Math.round(config.width * desired_zoomfactor),
-		height: Math.round(config.height * desired_zoomfactor),
+		width: config.width,
+		height: config.height,
 		backgroundColor: "#000000",
 		resizable: true,
 		show: false,
@@ -87,7 +79,7 @@ electron.app.whenReady().then(() => {					// If "ready" event already happened, 
 			contextIsolation: false,
 			nodeIntegration: true,
 			spellcheck: false,
-			zoomFactor: desired_zoomfactor				// Unreliable? See https://github.com/electron/electron/issues/10572
+			zoomFactor: desired_zoomfactor
 		}
 	});
 
@@ -210,28 +202,6 @@ electron.app.whenReady().then(() => {					// If "ready" event already happened, 
 			fn: "log",
 			args: [hw_msg],
 		});
-
-		// If this appears to be first run, and the user is on a high-res display, adjust every size...
-
-		if (desired_zoomfactor !== 1 && !config_io.pre_existed) {
-			let o = {};
-			for (let key of [
-				"info_font_size",
-				"thumbnail_square_size",
-				"tree_spacing",
-				"graph_width",
-				"comment_box_height",
-				"board_line_width",
-				"major_graph_linewidth",
-				"minor_graph_linewidth"
-			]) {
-				o[key] = Math.max(1, Math.round(config_io.defaults[key] / desired_zoomfactor));
-			}
-			if (o["info_font_size"] % 2 === 1) {
-				o["info_font_size"] -= 1;						// To match some menu item, so something gets a tick.
-			}
-			win.webContents.send("set", o);
-		}
 
 	});
 
@@ -1363,6 +1333,14 @@ function menu_build() {
 				{
 					label: translate("MENU_CANDIDATE_FILTER"),
 					submenu: cost_filter_submenu(),
+				},
+				{
+					label: translate("MENU_ALWAYS_SHOW_NEXT_MOVE_EVAL"),
+					type: "checkbox",
+					checked: config.always_show_next_move_eval,
+					click: () => {
+						win.webContents.send("toggle", "always_show_next_move_eval");
+					}
 				},
 				{
 					label: translate("MENU_NUMBERS"),

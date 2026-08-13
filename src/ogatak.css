@@ -211,6 +211,95 @@ body.row_dragging, body.row_dragging * {
 	width: 100%;
 }
 
+#mr_game_identity:empty {
+	display: none;
+}
+
+.mr_players {
+	align-items: stretch;
+	border-bottom: 1px solid #333333ff;
+	display: grid;
+	gap: 0.8em;
+	grid-template-columns: minmax(0, 1fr) minmax(8em, auto) minmax(0, 1fr);
+	margin-bottom: 0.7em;
+	padding-bottom: 0.7em;
+}
+
+.mr_player {
+	align-items: center;
+	background-color: #181818ff;
+	border: 1px solid #333333ff;
+	display: flex;
+	gap: 0.7em;
+	min-width: 0;
+	padding: 0.65em 0.8em;
+}
+
+.mr_player_w {
+	flex-direction: row-reverse;
+	text-align: right;
+}
+
+.mr_player_active {
+	background-color: #262216ff;
+	border-color: #e0b872ff;
+}
+
+.mr_player_stone {
+	flex: 0 0 auto;
+	height: 2.5em;
+	width: 2.5em;
+}
+
+.mr_player_text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.mr_player_colour {
+	color: #999999ff;
+	font-size: 0.8em;
+	font-weight: bold;
+	letter-spacing: 0.14em;
+}
+
+.mr_player_turn {
+	color: #e0b872ff;
+	margin-left: 0.8em;
+}
+
+.mr_player_name {
+	color: #ffffffff;
+	font-size: 1.55em;
+	font-weight: bold;
+	overflow-wrap: anywhere;
+}
+
+.mr_player_rank {
+	color: #aaaaaaff;
+	font-size: 0.65em;
+	font-weight: normal;
+	margin-left: 0.6em;
+}
+
+.mr_game_meta {
+	align-items: center;
+	color: #999999ff;
+	display: flex;
+	flex-direction: column;
+	font-size: 0.85em;
+	justify-content: center;
+	text-align: center;
+}
+
+.mr_game_result {
+	color: #ffffffff;
+	font-size: 1.35em;
+	font-weight: bold;
+	margin-top: 0.25em;
+}
+
 #mr_controls {
 	color: #888888ff;
 	font-size: 0.9em;
@@ -262,8 +351,9 @@ body.row_dragging, body.row_dragging * {
 .mr_secbox {
 	margin-bottom: 0.8em;
 	max-width: 100%;
+	min-width: 0;
 	position: relative;
-	/* width is set from config.move_report_width by move_report.js */
+	/* move_report.js sets the preferred flex basis; cards expand to fill each row. */
 }
 
 .mr_sechead {
@@ -285,6 +375,8 @@ body.row_dragging, body.row_dragging * {
 .mr_chartcanvas {
 	display: block;
 	cursor: pointer;
+	max-width: 100%;
+	width: 100%;
 }
 
 #mr_canvas_distribution {

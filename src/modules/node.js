@@ -16,6 +16,7 @@ const {replace_all, valid_analysis_object, handicap_stones, points_list, xy_to_s
 
 const MIN_GRAPH_DEPTH = 60;
 const POSITION_WIDTH_THRESHOLD = 0.30;
+const STORED_CANDIDATE_COST_LIMIT = 50;
 
 let next_node_id = 1;
 let have_alerted_zobrist_mismatch = false;
@@ -899,6 +900,7 @@ class Node {
 		this.delete_key("SBKV");
 		this.delete_key("OGSC");
 		this.delete_key("OGWI");
+		this.delete_key("OGWC");
 	}
 
 	move_count() {
@@ -970,18 +972,27 @@ class Node {
 		let best_score = infos.length > 0 ? infos[0].scoreLead : null;
 		if (typeof best_score === "number") {
 			let active_is_b = this.get_board().active === "b";
-			let width = infos.reduce((count, info) => {
+			let costs = infos.map(info => {
 				if (typeof info.scoreLead !== "number") {
-					return count;
+					return null;
 				}
 				let cost = active_is_b
 					? best_score - info.scoreLead
 					: info.scoreLead - best_score;
-				return count + (Math.max(0, cost) <= POSITION_WIDTH_THRESHOLD + Number.EPSILON ? 1 : 0);
+				return Math.max(0, cost);
+			}).filter(cost => cost !== null);
+			let width = costs.reduce((count, cost) => {
+				return count + (cost <= POSITION_WIDTH_THRESHOLD + Number.EPSILON ? 1 : 0);
 			}, 0);
 			this.set("OGWI", width.toString());
+			this.set("OGWC", costs
+				.sort((a, b) => a - b)
+				.slice(0, STORED_CANDIDATE_COST_LIMIT)
+				.map(cost => cost.toFixed(2))
+				.join(","));
 		} else {
 			this.delete_key("OGWI");
+			this.delete_key("OGWC");
 		}
 		return true;
 	}
@@ -1018,6 +1029,22 @@ class Node {
 			throw new Error("stored_position_width(): OGWI must be an integer >= 1");
 		}
 		return width;
+	}
+
+	stored_candidate_costs() {
+		if (!this.has_key("OGWC")) {
+			return null;
+		}
+		let raw = this.get("OGWC");
+		if (typeof raw !== "string" || raw.length === 0) {
+			throw new Error("stored_candidate_costs(): OGWC must contain at least one cost");
+		}
+		let costs = raw.split(",").map(value => Number(value));
+		if (costs.length > STORED_CANDIDATE_COST_LIMIT ||
+			costs.some(cost => !Number.isFinite(cost) || cost < 0)) {
+			throw new Error(`stored_candidate_costs(): OGWC must contain 1-${STORED_CANDIDATE_COST_LIMIT} non-negative costs`);
+		}
+		return costs;
 	}
 
 	stored_winrate() {

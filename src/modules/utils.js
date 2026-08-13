@@ -143,6 +143,24 @@ exports.cost_threshold_label = function(n) {
 	return `≤ ${n.toFixed(2)}`;
 };
 
+// GTP vertices of moves actually present as children of this node
+// (the game's next move, plus any variations from here).
+
+exports.next_move_gtp_set = function(node) {
+	let board = node.get_board();
+	let set = Object.create(null);
+	for (let child of node.children) {
+		for (let key of ["B", "W"]) {
+			for (let s of child.all_values(key)) {
+				if (typeof s === "string" && s.length === 2) {
+					set[board.gtp(s)] = true;
+				}
+			}
+		}
+	}
+	return set;
+};
+
 exports.moveinfo_filter = function(node) {
 
 	if (!node.has_valid_analysis()) {
@@ -153,6 +171,7 @@ exports.moveinfo_filter = function(node) {
 	let best_lead = infos.length > 0 ? infos[0].scoreLead : null;
 	let active_is_b = node.get_board().active === "b";
 	let cost_cut = config.cost_threshold;
+	let next_gtp = config.always_show_next_move_eval ? exports.next_move_gtp_set(node) : null;
 	let ret = [];
 
 	for (let i = 0; i < infos.length; i++) {
@@ -163,6 +182,10 @@ exports.moveinfo_filter = function(node) {
 		}
 		let cost = exports.info_cost(info, best_lead, active_is_b);
 		if (cost !== null && cost <= cost_cut + 1e-9) {
+			ret.push(info);
+			continue;
+		}
+		if (next_gtp && next_gtp[info.move]) {
 			ret.push(info);
 		}
 	}

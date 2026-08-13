@@ -18,8 +18,9 @@ engine output in a form that requires constant mental translation:
 - There is no direct answer to the question the player actually has after
   every move: "how bad was that move, compared to the best available?"
 
-That translation loop is a failed method of showing information. This fork
-replaces it.
+That repeated translation slows review and makes immediate comparison
+difficult. This fork presents the same analysis in fixed, labeled frames of
+reference.
 
 ## The framework (rules every display element must follow)
 
@@ -53,29 +54,35 @@ replaces it.
 
 ## What a glance at the screen must convey
 
-1. **Whose turn it is now** — stone icon + "BLACK TO PLAY" / "WHITE TO
+1. **Who is playing** — when the SGF provides `PB` or `PW`, a persistent
+   player strip prominently shows both available names, ranks, stone colors,
+   and which player is to move. Event, round, and result are secondary
+   context. If neither player name exists, the strip is absent rather than
+   displaying two large unknown placeholders.
+2. **Whose turn it is now** — stone icon + "BLACK TO PLAY" / "WHITE TO
    PLAY", large, always present.
-2. **Where the last move was** — highlighted on the board (stock behavior,
+3. **Where the last move was** — highlighted on the board (stock behavior,
    kept) and stated in the panel: move number, color, coordinate.
-3. **How good the last move was** — verdict word, color-coded, with the
+4. **How good the last move was** — verdict word, color-coded, with the
    points it threw away vs the engine's best, AND how far (in board lines)
    it was from the engine's preferred point, naming that point:
    "MISTAKE — lost 3.20 pts. Best was D4 (5 lines away)."
    Scale: <0.5 excellent (green) / <1.5 good / <3 inaccuracy (yellow) /
    <6 mistake (orange) / >=6 blunder (red).
-4. **How the last move changed the likely outcome** — before -> after in
+5. **How the last move changed the likely outcome** — before -> after in
    labeled form, both score and winrate: "B+3.20 -> B+1.10", "B 62% -> B 55%".
-5. **Next move options and values, ongoing** — the engine's current top
+6. **Next move options and values, ongoing** — the engine's current top
    candidates as a readable table: move, resulting score ("B+2.30"),
    winrate ("B 61%"), visits, and a "costs" column (points worse than the
    top candidate, unsigned, per rule 2). Rows clickable to play the move.
    The on-board colored candidate circles are stock behavior, kept — but
    the number shown on them is "Delta" (points vs the best available
    move, 0 = best), NOT visits: the visit count is irrelevant as a
-   top-level item on the highlights (2026-08-11). On-board circles show
+   top-level item on the highlights (2026-08-11).    On-board circles show
    every candidate at most `cost_threshold` points worse than the best
    move, regardless of how many engine visits it received. The current
-   threshold is 0.30.
+   threshold is 0.30. The game's next move is also shown when KataGo
+   has evaluated it (Display → Always show next-move eval, default on).
 6. **Quality of moves** — (respecified 2026-08-11: this is NOT a
    line graph) a bar chart, one bar per move, on a FIXED axis: up always
    means "White gained points", down always means "Black gained points" —
@@ -133,28 +140,50 @@ replaces it.
    the count of all candidate moves whose score cost is at most 0.30 points
    worse than the engine's best found move at that position. Width uses all
    reported `moveInfos`, independent of Move Value Distribution's top-N
-   display limit. Each accepted analysis snapshot stores width as the SGF
+   display limit. It expresses how broad the strategic possibilities are:
+   a sustained Width of 1 means that the path of near-best moves is narrow,
+   while Width of 8 or more means that many competitive choices remain.
+   Each accepted analysis snapshot stores width as the SGF
    node property `OGWI`, so the historical series survives save/load.
    Move Quality overlays that series: at every analyzed node on the current
    line, a small semi-transparent green point rises from the chart's center
    line on an independent positive-only scale and is labeled with its width
    integer. No connecting line is drawn. The overlay is labeled
    `width: moves ≤0.30` and never changes the Move Quality point-loss axis.
+   Alongside it, a blue **candidate spray** exposes the values behind the
+   count. Each position stores the score-ranked top 50 candidate costs in SGF
+   property `OGWC`; the chart displays an adjustable top N, default 10, via
+   `move_report_width_spray_top_n`. Best is `0.00` at the centerline. Worse
+   moves rise upward on a separate positive-only distance-from-best range and
+   carry negative relative labels such as `−3.00`. The spray follows the
+   Move Quality chart's linear/log-base-2 selection without altering the
+   quality-bar axis. Blue dots separated by fewer than ten rendered pixels
+   combine into one dot whose label preserves the value range and count, such
+   as `−0.08…−0.13 ×3`. Every cluster remains drawn, but labels thin by whole
+   move columns as horizontal space contracts. The current and hovered
+   columns remain labeled; hovering reports every displayed value for that
+   position.
 
 ### Current-line semantics
 
 Move Quality, its Width overlay, and Game Status contain the current node and its ancestors
 on the currently selected variation — never unreached future nodes and
 never values taken from the main line merely because it is the main
-line. Neither switches to a fixed-size lookback window: both retain the
-whole current line and make each move's column or line segment narrower
-as the line grows. Rewinding shortens both charts. Advancing along the
-same variation or playing a different variation extends them one reached
-position at a time. Ogatak starts fresh analysis whenever the current
-node changes; the charts redraw as that analysis arrives. Next Move
-Options always comes only from the current position's fresh analysis.
-Thus all displays describe the path the user is currently
-traversing.
+line. Each chart independently toggles between full history and a sliding
+window of the last N moves. N defaults to 40, is editable in that chart's
+header, redraws immediately, and persists through
+`move_report_quality_windowed`, `move_report_quality_window_n`,
+`move_report_status_windowed`, and `move_report_status_window_n`. Before N
+moves have been played, window mode shows the complete reached line. Move
+numbers remain absolute rather than restarting at 1. Game Status includes
+the position immediately before the first displayed move solely to draw
+that move's incoming line segment. Move Quality bars, Width, and the
+candidate spray share one quality-window range. Rewinding or changing
+variation recalculates both ranges from the newly current line. Ogatak
+starts fresh analysis whenever the current node changes; the charts redraw
+as that analysis arrives. Next Move Options always comes only from the
+current position's fresh analysis. Thus all displays describe the path the
+user is currently traversing.
 
 ### Analysis snapshots must never regress
 
@@ -228,7 +257,10 @@ Requirements now:
    `move_report_sections` (an ordered array of the visible sections).
    The on-board candidate filter persists as `cost_threshold` (points worse
    than the best available move; current/default 0.30; 0 = All). Candidate
-   visibility never depends on visits. The palette persists as
+   visibility never depends on visits. When **Display → Always show
+   next-move eval** is on (default), the game's next move — and any
+   variation from this node — is also drawn if KataGo reported it, even
+   when it is worse than the cutoff. The palette persists as
    `candidate_gradient`.
    Editing `config.json` by hand is an equally supported path — the array
    IS the template: reorder it, delete from it, and that's the layout.
@@ -272,4 +304,7 @@ startup, so the stock comment drawer and input handlers are untouched.
   comparable score at or below the threshold appears, including
   symmetry-equivalent moves and candidates with few visits.
   `cost_threshold` is points worse than `moveInfos[0]`, from the side to
-  play, matching the panel's costs column.
+  play, matching the panel's costs column. If
+  `always_show_next_move_eval` is on, any child-node move KataGo
+  evaluated is included as well, so a played blunder still shows its
+  Delta even when it is past the cutoff.

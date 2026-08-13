@@ -66,6 +66,7 @@ exports.defaults = {
 	"no_ponder_no_candidates": false,
 	"numbers": "Delta",							// Lame stringly typed. Fork default: points vs best available (0 = best), not visits (PRODUCT.md).
 	"cost_threshold": 0.3,						// Max points worse than the best available move; independent of visits.
+	"always_show_next_move_eval": true,			// When candidate circles are on, also show the game's next move if KataGo evaluated it.
 	"candidate_gradient": "green_red",			// See colour_gradients.js. "classic" uses the Colours-menu pair.
 	"mouseover_pv": true,
 	"mouseover_delay": 0,
@@ -91,8 +92,13 @@ exports.defaults = {
 	"move_report_chart_height": 150,			// also be edited here.
 	"move_report_sections": ["quality", "status", "distribution", "turn", "lastmove", "outcome", "options", "comments"],
 	"move_report_distribution_top_n": 50,		// Number of engine-ranked candidates included in Move Value Distribution.
+	"move_report_width_spray_top_n": 10,			// Historical candidate-cost dots drawn per Move Quality column.
 	"move_report_quality_yscale": "linear",		// "linear" or "log2", toggled from the quality chart's header.
 	"move_report_status_yscale": "linear",		// "linear" or "log2", toggled from the status chart's header.
+	"move_report_quality_windowed": false,		// When true, Move Quality shows only its last configured N moves.
+	"move_report_quality_window_n": 40,
+	"move_report_status_windowed": false,		// Game Status has an independent full-history / sliding-window toggle.
+	"move_report_status_window_n": 40,
 
 	"tree_spacing": 24,
 	"tree_off_colour": "#444444ff",
@@ -303,6 +309,10 @@ function apply_fixes() {
 
 	if (typeof config.cost_threshold !== "number" || !Number.isFinite(config.cost_threshold) || config.cost_threshold < 0) {
 		config.cost_threshold = exports.defaults.cost_threshold;
+	}
+
+	if (typeof config.always_show_next_move_eval !== "boolean") {
+		config.always_show_next_move_eval = exports.defaults.always_show_next_move_eval;
 	}
 
 	if (!colour_gradients.has(config.candidate_gradient)) {

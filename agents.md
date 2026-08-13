@@ -19,8 +19,9 @@ improving the comprehensibility of the AI data shown during game review.
   `src/modules/__start.js`, `src/modules/__start_spinners.js` (wiring),
   `src/modules/config_io.js` (the `move_report_*` config keys),
   `src/modules/colour_gradients.js` (candidate palettes; Display →
-  Gradient), and the Display → Distance from best filter
-  (`cost_threshold`) in `utils.js` / `board_drawer.js`.
+  Gradient), the Display → Distance from best filter
+  (`cost_threshold`), and Display → Always show next-move eval
+  (`always_show_next_move_eval`) in `utils.js` / `board_drawer.js`.
 
 ## Remotes
 

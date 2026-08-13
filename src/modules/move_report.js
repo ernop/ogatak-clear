@@ -15,7 +15,8 @@
 //   - Three chart concepts, never conflated: "quality" (per-move bars: how
 //     well each move was played), "status" (who was winning), and "distribution"
 //     (current candidate moves by points worse than best). Position width is a
-//     separate count series overlaid on quality.
+//     separate count series overlaid on quality; its blue candidate spray shows
+//     the underlying historical move values without changing the quality axis.
 //
 // The panel is made of named sections. Their order and visibility live in
 // config.move_report_sections; sizes live in config.move_report_font_size /
@@ -24,7 +25,7 @@
 
 const config_io = require("./config_io");
 const colour_gradients = require("./colour_gradients");
-const {info_cost} = require("./utils");
+const {info_cost, safe_html} = require("./utils");
 
 const SECTION_TITLES = {
 	quality:  "MOVE QUALITY",
@@ -58,6 +59,9 @@ const LIMITS = {
 	move_report_width:        {min: 320, max: 1280, step: 40},
 	move_report_chart_height: {min: 90,  max: 400,  step: 20},
 	move_report_distribution_top_n: {min: 1, max: 1000, step: 1},
+	move_report_width_spray_top_n: {min: 1, max: 50, step: 1},
+	move_report_quality_window_n: {min: 1, max: 1000, step: 1},
+	move_report_status_window_n: {min: 1, max: 1000, step: 1},
 };
 
 const CHART_PAD_LEFT = 44;			// Room for y-axis labels.
@@ -66,6 +70,8 @@ const CHART_PAD_TOP = 14;
 const CHART_PAD_BOTTOM = 20;		// Room for x-axis labels.
 const CHART_MIN_DEPTH = 20;			// Both charts keep this many x slots so early games aren't stretched.
 const DISTRIBUTION_BUCKET_COUNT = 10;
+const WIDTH_SPRAY_CLUSTER_PX = 10;
+const WIDTH_SPRAY_LABEL_WIDTH = 64;
 
 function symmetric_y_scale(abs_max, mode, linear_step) {
 
@@ -104,7 +110,7 @@ function chart_plot_rect(canvas) {
 	};
 }
 
-function chart_x_scale(x0, x1, end_depth) {
+function chart_x_scale(x0, x1, end_depth, windowed, window_n) {
 
 	// Shared x mapping. A move is the interval (d-1, d]: quality fills that
 	// slot, status draws the segment across it. The position *after* the move
@@ -112,12 +118,27 @@ function chart_x_scale(x0, x1, end_depth) {
 	// the two yellow lines coincide — they sit on the right edge of the
 	// current quality bar, which is also the status dot.
 
-	let depth_max = Math.max(CHART_MIN_DEPTH, end_depth);
+	if (typeof windowed !== "boolean") {
+		throw new Error("chart_x_scale(): windowed must be boolean");
+	}
+	if (!Number.isInteger(window_n) || window_n < 1) {
+		throw new Error("chart_x_scale(): window_n must be an integer >= 1");
+	}
+
+	let first_move = windowed ? Math.max(1, end_depth - window_n + 1) : 1;
+	let domain_start = first_move - 1;
+	let shown_move_count = end_depth - domain_start;
+	let domain_span = windowed && end_depth >= window_n
+		? window_n
+		: Math.max(CHART_MIN_DEPTH, shown_move_count);
 	let span = x1 - x0;
-	let x_of = (depth) => x0 + span * depth / depth_max;
+	let slot_w = span / domain_span;
+	let x_of = (depth) => x0 + slot_w * (depth - domain_start);
 	return {
-		depth_max,
-		slot_w: span / depth_max,
+		first_move,
+		domain_start,
+		domain_end: domain_start + domain_span,
+		slot_w,
 		x_of,
 	};
 }
@@ -140,6 +161,7 @@ function init() {
 
 	let parts = [];
 
+	parts.push(`<div id="mr_game_identity"></div>`);
 	parts.push(`<div id="mr_controls">`);
 	parts.push(`<span class="mr_ctlgroup">text <span class="mr_ctl" data-act="font_down">–</span><span class="mr_ctl" data-act="font_up">+</span></span>`);
 	parts.push(`<span class="mr_ctlgroup">width <span class="mr_ctl" data-act="width_down">–</span><span class="mr_ctl" data-act="width_up">+</span></span>`);
@@ -155,7 +177,13 @@ function init() {
 		parts.push(`<span class="mr_secctls">`);
 		if (YSCALE_SECTIONS.includes(sec)) {
 			parts.push(`<span class="mr_secctl" id="mr_yscale_ctl_${sec}" data-sec="${sec}" data-act="yscale" title="Toggle linear / log2 y scale">lin</span>`);
-		} else if (sec === "distribution") {
+			parts.push(`<span class="mr_secctl" id="mr_window_ctl_${sec}" data-sec="${sec}" data-act="window" title="Toggle full history / sliding window">full</span>`);
+			parts.push(`<label class="mr_metric" title="Moves retained when sliding window is enabled">last <input id="mr_window_n_${sec}" type="number" min="1" max="1000" step="1"></label>`);
+		}
+		if (sec === "quality") {
+			parts.push(`<label class="mr_metric" title="Engine-ranked candidate values drawn per historical position">spray <input id="mr_width_spray_top_n" type="number" min="1" max="50" step="1"></label>`);
+		}
+		if (sec === "distribution") {
 			parts.push(`<label class="mr_metric" title="Use only the engine-ranked top N moves">top <input id="mr_distribution_top_n" type="number" min="1" max="1000" step="1"></label>`);
 		}
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="up" title="Move section up">▲</span>`);
@@ -185,6 +213,7 @@ function init() {
 		outer: outer,
 		inner: document.getElementById("mr_inner"),
 		chips: document.getElementById("mr_hidden_chips"),
+		game_identity: document.getElementById("mr_game_identity"),
 
 		quality_canvas: document.getElementById("mr_canvas_quality"),
 		quality_ctx: document.getElementById("mr_canvas_quality").getContext("2d"),
@@ -196,6 +225,7 @@ function init() {
 		content_cache: {},			// section name --> last html set
 		chips_cache: "",
 		quality_click_map: null,	// Chart geometries for click-to-navigate.
+		quality_hover_depth: null,
 		status_click_map: null,
 		distribution_hover_map: null,
 
@@ -246,12 +276,47 @@ function init() {
 		ret.set_distribution_top_n(event.target.value);
 	});
 
+	document.getElementById("mr_width_spray_top_n").addEventListener("input", (event) => {
+		ret.set_width_spray_top_n(event.target.value, false);
+	});
+
+	document.getElementById("mr_width_spray_top_n").addEventListener("change", (event) => {
+		ret.set_width_spray_top_n(event.target.value, true);
+	});
+
+	for (let sec of YSCALE_SECTIONS) {
+		let input = document.getElementById(`mr_window_n_${sec}`);
+		input.addEventListener("input", (event) => {
+			ret.set_chart_window_n(sec, event.target.value, false);
+		});
+		input.addEventListener("change", (event) => {
+			ret.set_chart_window_n(sec, event.target.value, true);
+		});
+	}
+
 	ret.quality_canvas.addEventListener("mousedown", (event) => {
 		event.preventDefault();
 		let node = ret.node_from_quality_click(event.offsetX);
 		if (node) {
 			hub.set_node(node, {bless: false});
 		}
+	});
+
+	ret.quality_canvas.addEventListener("mousemove", (event) => {
+		let depth = ret.quality_depth_at(event.offsetX);
+		if (depth !== ret.quality_hover_depth) {
+			ret.quality_hover_depth = depth;
+			ret.draw_quality(hub.node);
+		}
+		ret.quality_canvas.title = ret.quality_spray_title(depth);
+	});
+
+	ret.quality_canvas.addEventListener("mouseleave", () => {
+		if (ret.quality_hover_depth !== null) {
+			ret.quality_hover_depth = null;
+			ret.draw_quality(hub.node);
+		}
+		ret.quality_canvas.title = "";
 	});
 
 	ret.status_canvas.addEventListener("mousedown", (event) => {
@@ -272,6 +337,38 @@ function init() {
 	ret.distribution_canvas.addEventListener("mouseleave", () => {
 		ret.distribution_canvas.title = "";
 	});
+
+	// Canvas backing dimensions do not follow CSS layout automatically. Observe
+	// the chart containers so window resize, maximize, zoom, and flex reflow all
+	// redraw at their final widths.
+
+	ret.observed_chart_widths = [];
+	ret.resize_frame = null;
+	ret.resize_observer = new ResizeObserver(() => {
+		let widths = [
+			ret.quality_canvas,
+			ret.status_canvas,
+			ret.distribution_canvas,
+		].map(canvas => canvas.parentElement.clientWidth);
+
+		if (widths.every((width, i) => width === ret.observed_chart_widths[i])) {
+			return;
+		}
+		ret.observed_chart_widths = widths;
+		if (ret.resize_frame !== null) {
+			cancelAnimationFrame(ret.resize_frame);
+		}
+		ret.resize_frame = requestAnimationFrame(() => {
+			ret.resize_frame = null;
+			if (hub.node && !hub.node.destroyed) {
+				ret.draw(hub.node);
+			}
+		});
+	});
+
+	for (let canvas of [ret.quality_canvas, ret.status_canvas, ret.distribution_canvas]) {
+		ret.resize_observer.observe(canvas.parentElement);
+	}
 
 	return ret;
 }
@@ -353,11 +450,69 @@ let move_report_prototype = {
 		this.draw(hub.node);
 	},
 
+	set_width_spray_top_n: function(raw_value, report_invalid) {
+
+		let value = Number(raw_value);
+		let lim = LIMITS.move_report_width_spray_top_n;
+		let input = document.getElementById("mr_width_spray_top_n");
+
+		if (!Number.isInteger(value) || value < lim.min || value > lim.max) {
+			if (report_invalid) {
+				input.setCustomValidity(`Enter a whole number from ${lim.min} to ${lim.max}.`);
+				input.reportValidity();
+			}
+			return;
+		}
+
+		input.setCustomValidity("");
+		if (config.move_report_width_spray_top_n === value) {
+			return;
+		}
+		config.move_report_width_spray_top_n = value;
+		config_io.save();
+		this.draw(hub.node);
+	},
+
+	set_chart_window_n: function(sec, raw_value, report_invalid) {
+
+		if (!YSCALE_SECTIONS.includes(sec)) {
+			throw new Error(`set_chart_window_n(): unsupported section ${sec}`);
+		}
+		let key = `move_report_${sec}_window_n`;
+		let value = Number(raw_value);
+		let lim = LIMITS[key];
+		let input = document.getElementById(`mr_window_n_${sec}`);
+
+		if (!Number.isInteger(value) || value < lim.min || value > lim.max) {
+			if (report_invalid) {
+				input.setCustomValidity(`Enter a whole number from ${lim.min} to ${lim.max}.`);
+				input.reportValidity();
+			}
+			return;
+		}
+
+		input.setCustomValidity("");
+		if (config[key] === value) {
+			return;
+		}
+		config[key] = value;
+		config_io.save();
+		this.draw(hub.node);
+	},
+
 	section_action: function(sec, act) {
 
 		if (act === "yscale" && YSCALE_SECTIONS.includes(sec)) {
 			let key = `move_report_${sec}_yscale`;
 			config[key] = (config[key] === "log2") ? "linear" : "log2";
+			config_io.save();
+			this.draw(hub.node);
+			return;
+		}
+
+		if (act === "window" && YSCALE_SECTIONS.includes(sec)) {
+			let key = `move_report_${sec}_windowed`;
+			config[key] = !config[key];
 			config_io.save();
 			this.draw(hub.node);
 			return;
@@ -392,7 +547,8 @@ let move_report_prototype = {
 			let i = visible.indexOf(sec);
 			box.style.display = (i === -1) ? "none" : "";
 			box.style.order = i.toString();
-			box.style.width = config.move_report_width.toString() + "px";		// Cards wrap side by side when the panel is wide.
+			box.style.width = "";
+			box.style.flex = `1 1 ${config.move_report_width}px`;		// Preferred wrap width; the final row expands to fill the panel.
 		}
 
 		let chips = ALL_SECTIONS
@@ -411,12 +567,35 @@ let move_report_prototype = {
 			if (control.textContent !== label) {
 				control.textContent = label;
 			}
+
+			let windowed = config[`move_report_${sec}_windowed`];
+			if (typeof windowed !== "boolean") {
+				throw new Error(`apply_layout(): move_report_${sec}_windowed must be boolean`);
+			}
+			let window_control = document.getElementById(`mr_window_ctl_${sec}`);
+			let window_label = windowed ? "window" : "full";
+			if (window_control.textContent !== window_label) {
+				window_control.textContent = window_label;
+			}
+
+			let window_input = document.getElementById(`mr_window_n_${sec}`);
+			let window_n = config[`move_report_${sec}_window_n`];
+			if (document.activeElement !== window_input &&
+				window_input.value !== window_n.toString()) {
+				window_input.value = window_n.toString();
+			}
 		}
 
 		let top_n_input = document.getElementById("mr_distribution_top_n");
 		if (document.activeElement !== top_n_input &&
 			top_n_input.value !== config.move_report_distribution_top_n.toString()) {
 			top_n_input.value = config.move_report_distribution_top_n.toString();
+		}
+
+		let spray_top_n_input = document.getElementById("mr_width_spray_top_n");
+		if (document.activeElement !== spray_top_n_input &&
+			spray_top_n_input.value !== config.move_report_width_spray_top_n.toString()) {
+			spray_top_n_input.value = config.move_report_width_spray_top_n.toString();
 		}
 	},
 
@@ -509,6 +688,12 @@ let move_report_prototype = {
 
 		this.apply_layout();
 
+		let players_html = this.html_players(node);
+		if (this.content_cache.players !== players_html) {
+			this.game_identity.innerHTML = players_html;
+			this.content_cache.players = players_html;
+		}
+
 		let visible = this.visible_sections();
 
 		for (let sec of visible) {
@@ -527,6 +712,48 @@ let move_report_prototype = {
 			}
 			// "comments" needs no drawing here: comment_drawer owns the textarea inside it.
 		}
+	},
+
+	html_players: function(node) {
+
+		let root = node.get_root();
+		let prop = (key) => root.has_key(key) ? String(root.get(key)).trim() : "";
+		let black_name = prop("PB");
+		let white_name = prop("PW");
+
+		if (!black_name && !white_name) {
+			return "";
+		}
+
+		let active = node.get_board().active;
+		let player = (colour, name, rank) => {
+			let is_black = colour === "b";
+			let colour_name = is_black ? "BLACK" : "WHITE";
+			let stone = is_black ? "black_stone.png" : "white_stone.png";
+			let active_class = active === colour ? " mr_player_active" : "";
+			let rank_html = rank ? `<span class="mr_player_rank">${safe_html(rank)}</span>` : "";
+			let turn_html = active === colour ? `<span class="mr_player_turn">TO PLAY</span>` : "";
+			return [
+				`<div class="mr_player mr_player_${colour}${active_class}">`,
+				`<img src="./gfx/${stone}" class="mr_player_stone" alt="${colour_name}">`,
+				`<span class="mr_player_text">`,
+				`<span class="mr_player_colour">${colour_name}${turn_html}</span>`,
+				`<span class="mr_player_name">${safe_html(name || colour_name[0] + colour_name.slice(1).toLowerCase() + " player")}${rank_html}</span>`,
+				`</span>`,
+				`</div>`,
+			].join("");
+		};
+
+		let event = prop("EV");
+		let round = prop("RO");
+		let result = prop("RE");
+		let context = [event, round ? `Round ${round}` : ""].filter(Boolean).map(safe_html).join("<br>");
+		let result_html = result ? `<span class="mr_game_result">${safe_html(result)}</span>` : "";
+		let meta_html = context || result_html
+			? `<div class="mr_game_meta"><span>${context}</span>${result_html}</div>`
+			: `<div class="mr_game_meta"></div>`;
+
+		return `<div class="mr_players">${player("b", black_name, prop("BR"))}${meta_html}${player("w", white_name, prop("WR"))}</div>`;
 	},
 
 	html_turn: function(node) {
@@ -886,6 +1113,98 @@ let move_report_prototype = {
 		return {range, count: map.bins[index]};
 	},
 
+	width_spray_clusters: function(costs, y_of) {
+
+		let points = costs
+			.map(cost => ({cost, y: y_of(cost)}))
+			.sort((a, b) => a.y - b.y);
+		let clusters = [];
+
+		for (let point of points) {
+			let cluster = clusters[clusters.length - 1];
+			if (!cluster || Math.abs(point.y - cluster.last_y) > WIDTH_SPRAY_CLUSTER_PX) {
+				clusters.push({
+					costs: [point.cost],
+					y_sum: point.y,
+					last_y: point.y,
+				});
+			} else {
+				cluster.costs.push(point.cost);
+				cluster.y_sum += point.y;
+				cluster.last_y = point.y;
+			}
+		}
+
+		return clusters.map(cluster => {
+			return {
+				costs: cluster.costs,
+				y: cluster.y_sum / cluster.costs.length,
+			};
+		});
+	},
+
+	fmt_candidate_relative: function(cost) {
+		return cost <= Number.EPSILON ? "0.00" : `−${cost.toFixed(2)}`;
+	},
+
+	fmt_width_spray_cluster: function(cluster) {
+		let low = Math.min(...cluster.costs);
+		let high = Math.max(...cluster.costs);
+		if (cluster.costs.length === 1) {
+			return this.fmt_candidate_relative(low);
+		}
+		let range = low.toFixed(2) === high.toFixed(2)
+			? this.fmt_candidate_relative(low)
+			: `${this.fmt_candidate_relative(low)}…${this.fmt_candidate_relative(high)}`;
+		return `${range} ×${cluster.costs.length}`;
+	},
+
+	fit_width_spray_label_clusters: function(clusters, max_count) {
+
+		let fitted = clusters.map(cluster => {
+			return {costs: Array.from(cluster.costs), y: cluster.y};
+		});
+
+		while (fitted.length > max_count) {
+			let merge_at = 0;
+			let closest = Infinity;
+			for (let i = 0; i < fitted.length - 1; i++) {
+				let distance = Math.abs(fitted[i + 1].y - fitted[i].y);
+				if (distance < closest) {
+					closest = distance;
+					merge_at = i;
+				}
+			}
+			let a = fitted[merge_at];
+			let b = fitted[merge_at + 1];
+			let count = a.costs.length + b.costs.length;
+			fitted.splice(merge_at, 2, {
+				costs: [...a.costs, ...b.costs],
+				y: (a.y * a.costs.length + b.y * b.costs.length) / count,
+			});
+		}
+		return fitted;
+	},
+
+	layout_width_spray_labels: function(clusters, min_y, max_y) {
+
+		let gap = 11;
+		let labels = clusters
+			.map(cluster => ({cluster, y: cluster.y}))
+			.sort((a, b) => a.y - b.y);
+
+		for (let i = 0; i < labels.length; i++) {
+			labels[i].y = Math.max(labels[i].y, i === 0 ? min_y : labels[i - 1].y + gap);
+		}
+		if (labels.length > 0 && labels[labels.length - 1].y > max_y) {
+			labels[labels.length - 1].y = max_y;
+			for (let i = labels.length - 2; i >= 0; i--) {
+				labels[i].y = Math.min(labels[i].y, labels[i + 1].y - gap);
+			}
+		}
+		return labels;
+	},
+
 	// ------------------------------------------------------------ quality bar chart
 	// One bar per move, on a FIXED axis: up = the move gained points for
 	// White, down = it gained points for Black (respecified 2026-08-11). Since a
@@ -916,8 +1235,14 @@ let move_report_prototype = {
 		let history = node.history();
 
 		let end_depth = history.length - 1;
-		let start_depth = 1;
-		let xs = chart_x_scale(x0, x1, end_depth);
+		let xs = chart_x_scale(
+			x0,
+			x1,
+			end_depth,
+			config.move_report_quality_windowed,
+			config.move_report_quality_window_n
+		);
+		let start_depth = xs.first_move;
 		let slot_w = xs.slot_w;
 
 		// Bar values on the fixed axis: positive = White gained, negative = Black
@@ -928,6 +1253,8 @@ let move_report_prototype = {
 		let y_abs_max = 3;
 		let position_widths = {};
 		let position_width_max = 1;
+		let position_candidate_costs = {};
+		let candidate_cost_max = 1;
 		for (let d = start_depth; d <= end_depth; d++) {
 			let delta = this.points_delta(history[d]);
 			let wg = delta === null ? null : (history[d].has_key("B") ? -delta : delta);
@@ -936,11 +1263,24 @@ let move_report_prototype = {
 				y_abs_max = Math.abs(wg);
 			}
 		}
-		for (let d = 0; d <= end_depth; d++) {
+		for (let d = start_depth; d <= end_depth; d++) {
 			let width = history[d].stored_position_width();
 			position_widths[d] = width;
 			if (width !== null && width > position_width_max) {
 				position_width_max = width;
+			}
+			let costs = history[d].stored_candidate_costs();
+			position_candidate_costs[d] = costs === null
+				? null
+				: costs
+					.sort((a, b) => a - b)
+					.slice(0, config.move_report_width_spray_top_n);
+			if (position_candidate_costs[d] !== null) {
+				for (let cost of position_candidate_costs[d]) {
+					if (cost > candidate_cost_max) {
+						candidate_cost_max = cost;
+					}
+				}
 			}
 		}
 
@@ -954,7 +1294,7 @@ let move_report_prototype = {
 		let y_zero = y_of(0);
 
 		this.quality_click_map = end_depth >= start_depth
-			? {x0, slot_w, start_depth, end_depth, history}
+			? {x0, slot_w, domain_start: xs.domain_start, start_depth, end_depth, history}
 			: null;
 
 		// Gridlines and y labels (magnitudes; the regions carry the direction)...
@@ -992,6 +1332,89 @@ let move_report_prototype = {
 			ctx.fillRect(bar_left, Math.min(y_zero, y_val), bar_right - bar_left, Math.max(1, Math.abs(y_val - y_zero)));
 		}
 
+		// Candidate spray uses the same linear/log2 transform selected for Move
+		// Quality, but an independent positive-only range. Zero sits on the
+		// centerline; moves farther below the best found move rise upward.
+
+		let candidate_scale = symmetric_y_scale(
+			candidate_cost_max,
+			config.move_report_quality_yscale,
+			(max) => max <= 3 ? 1 : max <= 6 ? 2 : max <= 15 ? 5 : 10
+		);
+		let candidate_t_max = candidate_scale.transform(candidate_scale.y_max);
+		let candidate_y_of = (cost) => {
+			return y_zero - (y_zero - y0) * candidate_scale.transform(cost) / candidate_t_max;
+		};
+		let spray_clusters = {};
+
+		ctx.fillStyle = "rgba(75, 170, 255, 0.62)";
+		for (let d = start_depth; d <= end_depth; d++) {
+			let costs = position_candidate_costs[d];
+			if (costs === null || costs.length === 0) {
+				continue;
+			}
+			let clusters = this.width_spray_clusters(costs, candidate_y_of);
+			spray_clusters[d] = clusters;
+			let x = xs.x_of(d);
+			for (let cluster of clusters) {
+				ctx.beginPath();
+				ctx.arc(x, cluster.y, cluster.costs.length > 1 ? 3.5 : 2.25, 0, 2 * Math.PI);
+				ctx.fill();
+			}
+		}
+
+		// Labels thin by whole columns as horizontal space contracts. The
+		// current and hovered columns remain labeled at every density.
+
+		let spray_label_step = Math.max(1, Math.ceil(WIDTH_SPRAY_LABEL_WIDTH / Math.max(1, slot_w)));
+		let labeled_depths = new Set([end_depth]);
+		for (let d = end_depth; d >= start_depth; d -= spray_label_step) {
+			labeled_depths.add(d);
+		}
+		if (this.quality_hover_depth !== null) {
+			labeled_depths.add(this.quality_hover_depth);
+		}
+
+		ctx.font = "9px monospace";
+		ctx.textBaseline = "middle";
+		for (let d of labeled_depths) {
+			let clusters = spray_clusters[d];
+			if (!clusters) {
+				continue;
+			}
+			let x = xs.x_of(d);
+			let on_right = x > (x0 + x1) / 2;
+			ctx.textAlign = on_right ? "right" : "left";
+			let label_min_y = y0 + 32;
+			let label_max_y = y_zero - 6;
+			let max_labels = Math.max(1, Math.floor((label_max_y - label_min_y) / 11) + 1);
+			let fitted = this.fit_width_spray_label_clusters(clusters, max_labels);
+			let labels = this.layout_width_spray_labels(fitted, label_min_y, label_max_y);
+			for (let label of labels) {
+				let text = this.fmt_width_spray_cluster(label.cluster);
+				let text_x = x + (on_right ? -5 : 5);
+				let text_width = ctx.measureText(text).width;
+
+				if (Math.abs(label.y - label.cluster.y) > 1) {
+					ctx.strokeStyle = "rgba(75, 170, 255, 0.45)";
+					ctx.beginPath();
+					ctx.moveTo(x, label.cluster.y);
+					ctx.lineTo(x + (on_right ? -3 : 3), label.y);
+					ctx.stroke();
+				}
+
+				ctx.fillStyle = "rgba(15, 15, 15, 0.82)";
+				ctx.fillRect(
+					on_right ? text_x - text_width - 2 : text_x - 2,
+					label.y - 5,
+					text_width + 4,
+					10
+				);
+				ctx.fillStyle = "rgba(145, 205, 255, 0.92)";
+				ctx.fillText(text, text_x, label.y);
+			}
+		}
+
 		// Position width is the number of candidates within 0.30 points of the
 		// best found move at that node. It has its own positive-only scale from
 		// the center line to the chart top and does not alter the quality axis.
@@ -999,7 +1422,7 @@ let move_report_prototype = {
 		let width_scale_max = Math.max(5, position_width_max);
 		ctx.font = "9px monospace";
 		ctx.textBaseline = "bottom";
-		for (let d = 0; d <= end_depth; d++) {
+		for (let d = start_depth; d <= end_depth; d++) {
 			let width = position_widths[d];
 			if (width === null) {
 				continue;
@@ -1013,7 +1436,7 @@ let move_report_prototype = {
 			ctx.fill();
 
 			ctx.fillStyle = "rgba(153, 255, 153, 0.75)";
-			ctx.textAlign = d === 0 ? "left" : d === end_depth ? "right" : "center";
+			ctx.textAlign = d === start_depth ? "left" : d === end_depth ? "right" : "center";
 			ctx.fillText(width.toString(), x, y - 4);
 		}
 
@@ -1039,6 +1462,8 @@ let move_report_prototype = {
 		ctx.textAlign = "right";
 		ctx.fillStyle = "rgba(153, 255, 153, 0.75)";
 		ctx.fillText("width: moves ≤0.30", x1 - 6, y0 + 8);
+		ctx.fillStyle = "rgba(145, 205, 255, 0.88)";
+		ctx.fillText(`blue: top ${config.move_report_width_spray_top_n} values vs best`, x1 - 6, y0 + 20);
 		ctx.textAlign = "left";
 		ctx.fillStyle = "#999999ff";
 		ctx.fillText("black gains", x0 + 6, y1 - 8);
@@ -1046,7 +1471,37 @@ let move_report_prototype = {
 		// Current position: the right edge of this move's bar, matching the
 		// status chart's point for the same depth.
 
-		stroke_position_marker(ctx, xs.x_of(Math.min(node.depth, xs.depth_max)), y0, y1);
+		stroke_position_marker(ctx, xs.x_of(end_depth), y0, y1);
+	},
+
+	quality_depth_at: function(mousex) {
+
+		let map = this.quality_click_map;
+		if (!map) {
+			return null;
+		}
+		let depth = Math.round(map.domain_start + (mousex - map.x0) / map.slot_w);
+		if (depth < map.start_depth || depth > map.end_depth) {
+			return null;
+		}
+		return depth;
+	},
+
+	quality_spray_title: function(depth) {
+
+		let map = this.quality_click_map;
+		if (!map || depth === null || !map.history[depth]) {
+			return "";
+		}
+		let costs = map.history[depth].stored_candidate_costs();
+		if (costs === null || costs.length === 0) {
+			return `#${depth}: candidate values have not been stored`;
+		}
+		let shown = costs
+			.slice(0, config.move_report_width_spray_top_n)
+			.map(cost => this.fmt_candidate_relative(cost))
+			.join(", ");
+		return `#${depth} candidate values vs best: ${shown}`;
 	},
 
 	node_from_quality_click: function(mousex) {
@@ -1055,10 +1510,10 @@ let move_report_prototype = {
 			return null;
 		}
 
-		let {x0, slot_w, start_depth, end_depth, history} = this.quality_click_map;
+		let {x0, slot_w, domain_start, start_depth, end_depth, history} = this.quality_click_map;
 
 		// Slots are (d-1, d], so the marker at x(d) belongs to move d.
-		let depth = Math.ceil((mousex - x0) / slot_w);
+		let depth = Math.ceil(domain_start + (mousex - x0) / slot_w);
 		if (depth < start_depth) depth = start_depth;
 		if (depth > end_depth) depth = end_depth;
 
@@ -1096,12 +1551,20 @@ let move_report_prototype = {
 		let history = node.history();
 		let scores = history.map(n => n.stored_score());
 
-		let xs = chart_x_scale(x0, x1, history.length - 1);
-		let depth_max = xs.depth_max;
+		let end_depth = history.length - 1;
+		let xs = chart_x_scale(
+			x0,
+			x1,
+			end_depth,
+			config.move_report_status_windowed,
+			config.move_report_status_window_n
+		);
+		let line_start_depth = xs.domain_start;
 		let x_of = xs.x_of;
 
 		let abs_max = 5;
-		for (let sc of scores) {
+		for (let d = line_start_depth; d <= end_depth; d++) {
+			let sc = scores[d];
 			if (typeof sc === "number" && Math.abs(sc) > abs_max) {
 				abs_max = Math.abs(sc);
 			}
@@ -1117,7 +1580,14 @@ let move_report_prototype = {
 		// White-ahead (negative Black-POV scores) remains the upper half.
 		let y_of = (score) => y0 + (y1 - y0) * (scale.transform(score) + t_max) / (2 * t_max);
 
-		this.status_click_map = {x0, x1, depth_max, history};
+		this.status_click_map = {
+			x0,
+			slot_w: xs.slot_w,
+			domain_start: xs.domain_start,
+			line_start_depth,
+			end_depth,
+			history,
+		};
 
 		// Axes and gridlines...
 
@@ -1139,11 +1609,13 @@ let move_report_prototype = {
 			}
 		}
 
-		let x_step = depth_max <= 60 ? 10 : depth_max <= 150 ? 25 : 50;
+		let widest_depth = Math.max(Math.abs(line_start_depth), Math.abs(end_depth));
+		let widest_label = ctx.measureText(widest_depth.toString()).width;
+		let x_step = Math.max(1, Math.ceil((widest_label + 12) / xs.slot_w));
 
 		ctx.textAlign = "center";
 		ctx.textBaseline = "top";
-		for (let d = 0; d <= depth_max; d += x_step) {
+		for (let d = end_depth; d >= line_start_depth; d -= x_step) {
 			let x = x_of(d);
 			ctx.strokeStyle = "#2c2c2cff";
 			ctx.beginPath();
@@ -1161,7 +1633,7 @@ let move_report_prototype = {
 
 		ctx.beginPath();
 		let region_started = false;
-		for (let n = 0; n < scores.length; n++) {
+		for (let n = line_start_depth; n <= end_depth; n++) {
 			if (typeof scores[n] !== "number") {
 				continue;
 			}
@@ -1172,7 +1644,7 @@ let move_report_prototype = {
 			ctx.lineTo(x_of(n), y_of(scores[n]));
 		}
 		if (region_started) {
-			ctx.lineTo(x_of(Math.min(scores.length - 1, depth_max)), y_zero);
+			ctx.lineTo(x_of(end_depth), y_zero);
 			ctx.closePath();
 			ctx.save();
 			ctx.clip();
@@ -1189,7 +1661,7 @@ let move_report_prototype = {
 		ctx.lineWidth = 2;
 		ctx.beginPath();
 		let started = false;
-		for (let n = 0; n < scores.length; n++) {
+		for (let n = line_start_depth; n <= end_depth; n++) {
 			if (typeof scores[n] !== "number") {
 				continue;
 			}
@@ -1214,7 +1686,7 @@ let move_report_prototype = {
 
 		// Current position: same x as the quality chart, the point after this move.
 
-		let cx = x_of(Math.min(node.depth, depth_max));
+		let cx = x_of(end_depth);
 		stroke_position_marker(ctx, cx, y0, y1);
 
 		let cur_score = node.stored_score();
@@ -1237,11 +1709,11 @@ let move_report_prototype = {
 			return null;
 		}
 
-		let {x0, x1, depth_max, history} = this.status_click_map;
+		let {x0, slot_w, domain_start, line_start_depth, end_depth, history} = this.status_click_map;
 
-		let depth = Math.round((mousex - x0) / (x1 - x0) * depth_max);
-		if (depth < 0) depth = 0;
-		if (depth >= history.length) depth = history.length - 1;
+		let depth = Math.round(domain_start + (mousex - x0) / slot_w);
+		if (depth < line_start_depth) depth = line_start_depth;
+		if (depth > end_depth) depth = end_depth;
 
 		let node = history[depth];
 		if (!node || node.destroyed) {

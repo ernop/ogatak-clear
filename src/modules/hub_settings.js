@@ -37,6 +37,7 @@ const togglechecks = {
 	coordinates:			[translate("MENU_DISPLAY"), translate("MENU_COORDINATES")],
 	black_pov:				[translate("MENU_DISPLAY"), translate("MENU_BLACK_POV_ALWAYS")],
 	stone_counts:			[translate("MENU_DISPLAY"), translate("MENU_STONE_COUNTS")],
+	always_show_next_move_eval: [translate("MENU_DISPLAY"), translate("MENU_ALWAYS_SHOW_NEXT_MOVE_EVAL")],
 	candidate_moves:		[translate("MENU_DISPLAY"), translate("MENU_CANDIDATE_MOVES")],
 	no_ponder_no_candidates:[translate("MENU_DISPLAY"), translate("MENU_NO_PONDER_NO_CANDIDATES")],
 	mouseover_pv:			[translate("MENU_DISPLAY"), translate("MENU_WITH_PV_MOUSEOVER")],
@@ -173,6 +174,7 @@ module.exports = {
 		case "numbers":
 		case "stone_counts":
 		case "cost_threshold":
+		case "always_show_next_move_eval":
 		case "candidate_gradient":
 		case "mouseover_pv":
 		case "next_move_markers":
