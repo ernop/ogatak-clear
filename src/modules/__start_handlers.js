@@ -254,7 +254,18 @@ window.addEventListener("keydown", (event) => {
 	// In each of these cases, the preventDefault() is there to prevent the unintended scrolling, but has the unwanted
 	// side-effect of also stopping the menu accelerators from working. So we have to take the right action.
 
-	if (event.code === "PageUp") {
+	let command_modifier = event.ctrlKey || event.metaKey;
+
+	if (command_modifier && !event.altKey && (event.code === "Equal" || event.code === "NumpadAdd")) {
+		event.preventDefault();
+		hub.zoom_in();
+	} else if (command_modifier && !event.altKey && (event.code === "Minus" || event.code === "NumpadSubtract")) {
+		event.preventDefault();
+		hub.zoom_out();
+	} else if (command_modifier && event.shiftKey && !event.altKey && event.code === "Digit0") {
+		event.preventDefault();
+		hub.zoom_reset();
+	} else if (event.code === "PageUp") {
 		event.preventDefault();
 		hub.input_up_down(-10);
 	} else if (event.code === "PageDown") {

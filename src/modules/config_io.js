@@ -85,7 +85,7 @@ exports.defaults = {
 	"graph_width": 192,
 	"comment_box_height": 256,
 
-	"zoom_factor": 1.0,							// Whole-UI zoom (Chromium page zoom). Ctrl+= / Ctrl+- / Ctrl+0.
+	"zoom_factor": 1.0,							// Whole-UI zoom (Chromium page zoom). Ctrl+= / Ctrl+- / Ctrl+Shift+0.
 
 	"move_report_font_size": 15,				// These settings are adjusted live from the Move Report panel's
 	"move_report_width": 640,					// own controls (see move_report.js / PRODUCT.md), but can
