@@ -90,6 +90,7 @@ translations[`English`] = {
 		MENU_AUTOANALYSIS: `Autoanalysis`,
 		MENU_BACKWARD_ANALYSIS: `Backward analysis`,			// Looks at a position then goes to the previous position, repeatedly.
 		MENU_AUTOANALYSIS_VISITS: `Autoanalysis visits`,
+		MENU_PONDER_VISITS: `Ponder visits`,
 		MENU_SET_RULES: `Set rules`,
 			MENU_CHINESE: `Chinese`,
 			MENU_JAPANESE: `Japanese`,
@@ -110,6 +111,8 @@ translations[`English`] = {
 
 		MENU_VISIT_FILTER: `Visit filter`,
 			MENU_ALL: `All`,
+		MENU_CANDIDATE_FILTER: `Candidate moves: points from best`,
+		MENU_GRADIENT: `Gradient`,
 		MENU_NUMBERS: `Numbers`,
 			MENU_NUM_WINRATE: `Winrate`,
 			MENU_NUM_LCB: `LCB`,

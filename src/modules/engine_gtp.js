@@ -24,7 +24,13 @@ const {ipcRenderer} = require("electron");
 
 const log = require("./log");
 const {translate} = require("./translate");
-const {new_query, compare_queries, compare_moves_arrays} = require("./query");
+const {
+	ANALYSIS_CONTEXT_PROPERTY,
+	analysis_context,
+	new_query,
+	compare_queries,
+	compare_moves_arrays,
+} = require("./query");
 
 // We don't send a query when another is running, so we must terminate
 // queries by sending some non-query command. But which one?
@@ -213,7 +219,16 @@ class GTPengine {
 
 		let gtp_id = this.__send(s);
 
-		return {colour, command, query_id, gtp_id};
+		return {
+			colour,
+			command,
+			query_id,
+			gtp_id,
+			analysis_context: analysis_context(o, {
+				mode: "gtp",
+				filepath: this.filepath,
+			}),
+		};
 	}
 
 	analyse(node) {
@@ -534,6 +549,10 @@ function make_analysis_object(line, running_info) {
 			winrate: 0.5,
 		},
 	};
+	Object.defineProperty(o, ANALYSIS_CONTEXT_PROPERTY, {
+		value: running_info.analysis_context,
+		enumerable: false,
+	});
 
 	let info_blocks = line.split("info ");
 

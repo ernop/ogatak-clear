@@ -17,7 +17,10 @@ improving the comprehensibility of the AI data shown during game review.
 - Our other touches vs upstream: `src/ogatak.html`, `src/ogatak.css` (panel
   styles; old strip-graph and tree canvas hidden), `src/modules/hub.js`,
   `src/modules/__start.js`, `src/modules/__start_spinners.js` (wiring),
-  `src/modules/config_io.js` (the `move_report_*` config keys).
+  `src/modules/config_io.js` (the `move_report_*` config keys),
+  `src/modules/colour_gradients.js` (candidate palettes; Display →
+  Gradient), and the Display → Distance from best filter
+  (`cost_threshold`) in `utils.js` / `board_drawer.js`.
 
 ## Remotes
 

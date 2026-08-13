@@ -10,6 +10,7 @@ const {fix_html_colour} = require("./html_colours");
 const translations = require("./translations");
 const {get_href_query_val} = require("./utils");
 const colour_choices = require("./colour_choices");
+const colour_gradients = require("./colour_gradients");
 
 exports.filename = "config.json";
 
@@ -64,7 +65,8 @@ exports.defaults = {
 	"candidate_moves": true,
 	"no_ponder_no_candidates": false,
 	"numbers": "Delta",							// Lame stringly typed. Fork default: points vs best available (0 = best), not visits (PRODUCT.md).
-	"visits_threshold": 0.02,
+	"cost_threshold": 0.3,						// Max points worse than the best available move; independent of visits.
+	"candidate_gradient": "green_red",			// See colour_gradients.js. "classic" uses the Colours-menu pair.
 	"mouseover_pv": true,
 	"mouseover_delay": 0,
 	"next_move_markers": true,
@@ -84,11 +86,13 @@ exports.defaults = {
 
 	"zoom_factor": 1.0,							// Whole-UI zoom (Chromium page zoom). Ctrl+= / Ctrl+- / Ctrl+0.
 
-	"move_report_font_size": 15,				// These 4 are adjusted live from the Move Report panel's
+	"move_report_font_size": 15,				// These settings are adjusted live from the Move Report panel's
 	"move_report_width": 640,					// own controls (see move_report.js / PRODUCT.md), but can
 	"move_report_chart_height": 150,			// also be edited here.
-	"move_report_sections": ["quality", "turn", "lastmove", "outcome", "options", "status", "comments"],
+	"move_report_sections": ["quality", "status", "distribution", "turn", "lastmove", "outcome", "options", "comments"],
+	"move_report_distribution_top_n": 50,		// Number of engine-ranked candidates included in Move Value Distribution.
 	"move_report_quality_yscale": "linear",		// "linear" or "log2", toggled from the quality chart's header.
+	"move_report_status_yscale": "linear",		// "linear" or "log2", toggled from the status chart's header.
 
 	"tree_spacing": 24,
 	"tree_off_colour": "#444444ff",
@@ -137,11 +141,13 @@ exports.defaults = {
 	"guess_ruleset": false,
 	"stone_counts": false,
 	"autoanalysis_visits": 500,
+	"ponder_visits": 1000000,					// Normal Space-key analysis limit; adjustable under Analysis.
 	"default_rules": "Chinese",					// Used for game on startup, as well as when rules are "" (unknown).
 	"default_komi": 7.5,						// Used for game on startup, but otherwise unknown komi is inferred as zero.
 
 	"komi_options": [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5],
 	"visit_options": [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000],
+	"ponder_visit_options": [1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000, 2000000, 5000000],
 
 	"read_only_paths": [],
 
@@ -166,6 +172,8 @@ exports.defaults = {
 	"gtp_filepath": "",							// Must be edited by the user in config.json
 	"gtp_argslist": [],							// Likewise.
 };
+
+exports.cost_threshold_options = [0.3, 0.5, 1, 1.5, 2, 3, 5, 8];
 
 // ---------------------------------------------------------------------------------------------------------------------------
 
@@ -260,7 +268,7 @@ function apply_fixes() {
 
 	// Ensure validity of some (possibly user-edited) numeric arrays...
 
-	for (let key of ["komi_options", "visit_options"]) {
+	for (let key of ["komi_options", "visit_options", "ponder_visit_options"]) {
 		if (!Array.isArray(config[key]) || config[key].length === 0) {
 			config[key] = Array.from(exports.defaults[key]);
 			console.log(`Invalid config.${key}... replacing with default`);
@@ -291,6 +299,14 @@ function apply_fixes() {
 
 	if (typeof config.graph_type !== "number") {						// It was some other string? (Check *after* the above)
 		config.graph_type = exports.defaults.graph_type;
+	}
+
+	if (typeof config.cost_threshold !== "number" || !Number.isFinite(config.cost_threshold) || config.cost_threshold < 0) {
+		config.cost_threshold = exports.defaults.cost_threshold;
+	}
+
+	if (!colour_gradients.has(config.candidate_gradient)) {
+		config.candidate_gradient = exports.defaults.candidate_gradient;
 	}
 }
 

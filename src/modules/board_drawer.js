@@ -19,7 +19,9 @@ const board_font_chooser = require("./board_font_chooser");
 const gridlines = require("./gridlines");
 const {translate} = require("./translate");
 
-const {handicap_stones, moveinfo_filter, pad, new_2d_array, xy_to_s, float_to_hex_ff,
+const colour_gradients = require("./colour_gradients");
+
+const {handicap_stones, moveinfo_filter, info_cost, pad, new_2d_array, xy_to_s, float_to_hex_ff,
 	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html} = require("./utils");
 
 // ------------------------------------------------------------------------------------------------
@@ -919,8 +921,18 @@ let board_drawer_prototype = {
 		let number_types = config.numbers.split(" + ");
 		let got_bad_analysis_text = false;
 		let needs_flip = !config.black_pov && board.active === "w";		// Whether values like LCB, score etc need flipped to show from White POV.
+		let active_is_b = board.active === "b";
+		let best_lead = filtered_infos.length > 0 ? filtered_infos[0].scoreLead : null;
+		let costs = filtered_infos.map(info => info_cost(info, best_lead, active_is_b));
+		let known_costs = costs.filter(c => c !== null);
+		let gradient_cap = config.cost_threshold > 0
+			? config.cost_threshold
+			: Math.max(0.5, ...known_costs);
+		let use_classic = colour_gradients.is_classic(config.candidate_gradient);
 
-		for (let info of filtered_infos) {
+		for (let i = 0; i < filtered_infos.length; i++) {
+
+			let info = filtered_infos[i];
 
 			let s = board.parse_gtp_move(info.move);
 
@@ -947,10 +959,12 @@ let board_drawer_prototype = {
 
 			let colour;
 
-			if (info.order === 0) {
-				colour = (board.active === "b") ? config.top_colour_black : config.top_colour_white;
+			if (!use_classic && costs[i] !== null) {
+				colour = colour_gradients.colour_for_cost(config.candidate_gradient, costs[i], gradient_cap);
+			} else if (info.order === 0) {
+				colour = active_is_b ? config.top_colour_black : config.top_colour_white;
 			} else {
-				colour = (board.active === "b") ? config.off_colour_black : config.off_colour_white;
+				colour = active_is_b ? config.off_colour_black : config.off_colour_white;
 			}
 
 			if (!is_valid_rgb_or_rgba_colour(colour)) {
@@ -1208,7 +1222,7 @@ let board_drawer_prototype = {
 			if (typeof lead === "number") {						// scoreLead might not be present if it's a GTP engine.
 				let leader = lead >= 0 ? "B" : "W";
 				if (lead < 0) lead *= -1;
-				score = `${leader}+${lead.toFixed(1)}`;
+				score = `${leader}+${lead.toFixed(2)}`;
 			}
 
 		} else if (node.has_key("OGSC")) {
@@ -1217,7 +1231,7 @@ let board_drawer_prototype = {
 			if (!Number.isNaN(lead)) {
 				let leader = lead >= 0 ? "B" : "W";
 				if (lead < 0) lead *= -1;
-				score = `${leader}+${lead.toFixed(1)}`;
+				score = `${leader}+${lead.toFixed(2)}`;
 			}
 
 		}
@@ -1324,13 +1338,7 @@ function string_from_info(info, node, type, flip) {
 			}
 			text = val < 0 ? "-" : "+";
 			absl = Math.abs(val);
-			if (absl < 10) {
-				text += absl.toFixed(1);
-				if (text === "-10.0") text = "-10";
-				if (text === "+10.0") text = "+10";
-			} else {
-				text += Math.floor(absl);
-			}
+			text += absl.toFixed(2);
 			return text;
 		case "Delta":
 			if (typeof info.scoreLead !== "number" || typeof node.analysis.moveInfos[0].scoreLead !== "number") {		// See above.
@@ -1342,14 +1350,8 @@ function string_from_info(info, node, type, flip) {
 			}
 			text = val < 0 ? "-" : "+";
 			absl = Math.abs(val);
-			if (absl < 10) {
-				text += absl.toFixed(1);
-				if (text === "-10.0") text = "-10";
-				if (text === "+10.0") text = "+10";
-				if (text === "+0.0" || text === "-0.0") text = "0";
-			} else {
-				text += Math.floor(absl);
-			}
+			text += absl.toFixed(2);
+			if (text === "+0.00" || text === "-0.00") text = "0";
 			return text;
 		case "Visits":
 			if (info.visits > 9950) {

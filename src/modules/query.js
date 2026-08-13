@@ -12,15 +12,45 @@
 
 const {node_id_from_search_id, compare_versions, deep_equals} = require("./utils");
 
-const default_maxvisits = 1000000;
 const fast_maxvisits = 5;										// What the hub will ask for when in play policy mode.
+const ANALYSIS_CONTEXT_PROPERTY = "__ogatak_analysis_context";
 
 let next_query_id = 1;
+
+function analysis_context(query, engine_identity) {
+
+	// Visit counts are comparable only when the position and every search-
+	// affecting input match. Reporting cadence and visit limit control how long
+	// a search runs, not what it means, so they are intentionally excluded.
+
+	let search = {};
+	for (let key of [
+		"rules",
+		"komi",
+		"boardXSize",
+		"boardYSize",
+		"initialStones",
+		"moves",
+		"initialPlayer",
+		"avoidMoves",
+		"allowMoves",
+		"overrideSettings",
+	]) {
+		if (query.hasOwnProperty(key)) {
+			search[key] = query[key];
+		}
+	}
+
+	return JSON.stringify({engine: engine_identity, search});
+}
 
 function new_query(query_node, eng_version = null, maxvisits = null, avoid_list = null) {
 
 	if (typeof maxvisits !== "number") {						// Things will likely send null / undefined when not specifying.
-		maxvisits = default_maxvisits;
+		maxvisits = config.ponder_visits;
+		if (!Number.isInteger(maxvisits) || maxvisits < 2) {
+			throw new Error("new_query(): config.ponder_visits must be an integer >= 2");
+		}
 	}
 
 	if (!Array.isArray(avoid_list)) {
@@ -175,4 +205,11 @@ function compare_moves_arrays(arr1, arr2) {			// Arrays of format [["B", "K10"],
 }
 
 
-module.exports = {default_maxvisits, fast_maxvisits, new_query, compare_queries, compare_moves_arrays};
+module.exports = {
+	fast_maxvisits,
+	ANALYSIS_CONTEXT_PROPERTY,
+	analysis_context,
+	new_query,
+	compare_queries,
+	compare_moves_arrays,
+};

@@ -233,6 +233,27 @@ body.row_dragging, body.row_dragging * {
 	background-color: #222222ff;
 }
 
+.mr_metric {
+	color: #888888ff;
+	cursor: default;
+	padding: 2px 9px;
+}
+
+.mr_metric input {
+	background-color: #181818ff;
+	border: 1px solid #555555ff;
+	color: #ffffffff;
+	font: inherit;
+	margin-left: 4px;
+	padding: 2px 4px;
+	width: 4.5em;
+}
+
+.mr_metric input:focus {
+	border-color: #e0b872ff;
+	outline: none;
+}
+
 .mr_chip {
 	color: #666666ff;
 	margin-right: 8px;
@@ -241,6 +262,7 @@ body.row_dragging, body.row_dragging * {
 .mr_secbox {
 	margin-bottom: 0.8em;
 	max-width: 100%;
+	position: relative;
 	/* width is set from config.move_report_width by move_report.js */
 }
 
@@ -263,6 +285,42 @@ body.row_dragging, body.row_dragging * {
 .mr_chartcanvas {
 	display: block;
 	cursor: pointer;
+}
+
+#mr_canvas_distribution {
+	cursor: crosshair;
+}
+
+.mr_width_drag {
+	bottom: 0;
+	cursor: ew-resize;
+	position: absolute;
+	right: -7px;
+	top: 0;
+	width: 14px;
+	z-index: 1;
+}
+
+.mr_width_drag::after {
+	background-color: #444444ff;
+	bottom: 0;
+	content: "";
+	opacity: 0.35;
+	position: absolute;
+	right: 6px;
+	top: 0;
+	transition: opacity 100ms;
+	width: 1px;
+}
+
+.mr_width_drag:hover::after,
+.mr_resizing .mr_width_drag::after {
+	opacity: 1;
+}
+
+.mr_resizing,
+.mr_resizing * {
+	cursor: ew-resize !important;
 }
 
 .mr_turn {

@@ -17,7 +17,7 @@ const log = require("./log");
 const stringify = require("./stringify");
 const {translate} = require("./translate");
 const {parse_version, compare_versions} = require("./utils");
-const {new_query, compare_queries} = require("./query");
+const {ANALYSIS_CONTEXT_PROPERTY, analysis_context, new_query, compare_queries} = require("./query");
 
 const bad_versions = [						// Versions of KataGo which are somehow broken.
 	[1, 9, 0],
@@ -50,6 +50,7 @@ class Engine {
 
 		this.desired = null;				// The search object we want to be running.
 		this.running = null;				// The search object actually running. (Possibly the same object as above.)
+		this.analysis_contexts = new Map();	// Query id --> search context, retained until that query's final response.
 	}
 
 	__send(o) {
@@ -93,7 +94,17 @@ class Engine {
 			}
 		}
 
+		if (this.desired && this.desired !== this.running) {
+			this.analysis_contexts.delete(this.desired.id);		// It was superseded while queued and will never produce a response.
+		}
 		this.desired = query;
+		this.analysis_contexts.set(query.id, analysis_context(query, {
+			mode: "analysis",
+			filepath: this.filepath,
+			engineconfig: this.engineconfig,
+			weights: this.weights,
+			version: this.version,
+		}));
 
 		if (this.running) {
 			this.__send({
@@ -230,6 +241,12 @@ class Engine {
 					}
 				}
 			}
+			if (this.analysis_contexts.has(o.id)) {
+				Object.defineProperty(o, ANALYSIS_CONTEXT_PROPERTY, {
+					value: this.analysis_contexts.get(o.id),
+					enumerable: false,
+				});
+			}
 			let running_has_finished = false;
 			if (o.action === "terminate") {										// We get these back very quickly upon sending a "terminate", however
 				if (this.running && this.running.id === o.terminateId) {		// Kata may send further updates in a little bit (10-100 ms or so).
@@ -260,6 +277,9 @@ class Engine {
 				}
 			}
 			hub.receive_object(o);
+			if (o.isDuringSearch === false || o.error) {
+				this.analysis_contexts.delete(o.id);
+			}
 		});
 
 		this.err_scanner.on("line", (line) => {
@@ -344,6 +364,7 @@ class Engine {
 		this.exe = null;
 		this.running = null;
 		this.desired = null;
+		this.analysis_contexts.clear();
 	}
 }
 

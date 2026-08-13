@@ -6,7 +6,8 @@ const path = require("path");
 const {ipcRenderer, webFrame} = require("electron");
 const {defaults} = require("./config_io");
 const {translate} = require("./translate");
-const {deep_equals} = require("./utils");
+const {deep_equals, cost_threshold_label} = require("./utils");
+const colour_gradients = require("./colour_gradients");
 
 const {NORMAL, AUTOANALYSIS, BACKANALYSIS, SELFPLAY, AUTOSCROLL, PLAY_BLACK, PLAY_WHITE} = require("./enums");
 
@@ -14,6 +15,7 @@ const multichecks = {
 	// Some special submenus are not included here, when their values don't match their labels.
 	report_every:			[translate("MENU_SETUP"), translate("MENU_ENGINE_REPORT_RATE")],
 	autoanalysis_visits:	[translate("MENU_ANALYSIS"), translate("MENU_AUTOANALYSIS_VISITS")],
+	ponder_visits:			[translate("MENU_ANALYSIS"), translate("MENU_PONDER_VISITS")],
 	analysis_pv_len:		[translate("MENU_ANALYSIS"), translate("MENU_PV_LENGTH_MAX")],
 	wide_root_noise:		[translate("MENU_ANALYSIS"), translate("MENU_WIDE_ROOT_NOISE")],
 	mouseover_delay:		[translate("MENU_DISPLAY"), translate("MENU_MOUSEOVER_DELAY")],
@@ -170,7 +172,8 @@ module.exports = {
 		case "no_ponder_no_candidates":
 		case "numbers":
 		case "stone_counts":
-		case "visits_threshold":
+		case "cost_threshold":
+		case "candidate_gradient":
 		case "mouseover_pv":
 		case "next_move_markers":
 		case "visit_colours":
@@ -344,8 +347,13 @@ module.exports = {
 			this.fix_play_against_checks();
 		}
 
-		if (key === "visits_threshold") {
-			this.fix_visit_filter_menu();
+		if (key === "cost_threshold") {
+			this.fix_cost_filter_menu();
+		}
+
+		if (key === "candidate_gradient") {
+			this.fix_gradient_menu();
+			move_report.draw(this.node);
 		}
 
 	},
@@ -458,11 +466,14 @@ module.exports = {
 		ipcRenderer.send(config.play_against_drunk ? "set_check_true" : "set_check_false", togglechecks["play_against_drunk"]);
 	},
 
-	fix_visit_filter_menu: function() {
-		let label = "?";
-		if (config.visits_threshold === 0) label = translate("MENU_ALL");
-		if (config.visits_threshold > 0) label = `N > ${config.visits_threshold * 100}%`;
-		ipcRenderer.send("set_checks", [translate("MENU_DISPLAY"), translate("MENU_VISIT_FILTER"), label]);
+	fix_cost_filter_menu: function() {
+		let label = cost_threshold_label(config.cost_threshold) || translate("MENU_ALL");
+		ipcRenderer.send("set_checks", [translate("MENU_DISPLAY"), translate("MENU_CANDIDATE_FILTER"), label]);
+	},
+
+	fix_gradient_menu: function() {
+		let label = colour_gradients.label_of(config.candidate_gradient);
+		ipcRenderer.send("set_checks", [translate("MENU_DISPLAY"), translate("MENU_GRADIENT"), label]);
 	},
 
 	// --------------------------------------------------------------------------------------------
@@ -471,8 +482,10 @@ module.exports = {
 		for (let key of Object.keys(o)) {
 			config[key] = o[key];
 		}
+		config.candidate_gradient = colour_gradients.CLASSIC;
 		this.draw();													// Currently this is enough.
 		this.fix_colours_menu();
+		this.fix_gradient_menu();
 	},
 
 	// --------------------------------------------------------------------------------------------

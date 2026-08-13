@@ -11,9 +11,11 @@ const path = require("path");
 
 const new_board = require("./board");
 const stringify = require("./stringify");
+const {ANALYSIS_CONTEXT_PROPERTY} = require("./query");
 const {replace_all, valid_analysis_object, handicap_stones, points_list, xy_to_s} = require("./utils");
 
 const MIN_GRAPH_DEPTH = 60;
+const POSITION_WIDTH_THRESHOLD = 0.30;
 
 let next_node_id = 1;
 let have_alerted_zobrist_mismatch = false;
@@ -34,6 +36,7 @@ class Node {
 		this.children = [];
 		this.props = Object.create(null);			// key --> list of values (strings only)
 		this.analysis = null;
+		this.analysis_context = null;
 		this.__board = null;
 		this.__blessed_child_id = null;				// Usually don't inspect this directly, rather call get_blessed_child()
 
@@ -892,8 +895,10 @@ class Node {
 
 	forget_analysis() {
 		this.analysis = null;
+		this.analysis_context = null;
 		this.delete_key("SBKV");
 		this.delete_key("OGSC");
+		this.delete_key("OGWI");
 	}
 
 	move_count() {
@@ -906,8 +911,29 @@ class Node {
 
 	receive_analysis(o) {
 
-		// Save a KataGo analysis object into the node for display.
-		// No real validation... caller should run valid_analysis_object(o) first!
+		// Keep the strongest result seen for this exact search context. Rewinding
+		// and revisiting a node starts a new engine query at zero visits; its
+		// early reports must not erase a result that previously searched longer.
+
+		let context = o[ANALYSIS_CONTEXT_PROPERTY];
+		let incoming_visits = o.rootInfo.visits;
+
+		if (typeof context !== "string") {
+			throw new Error("receive_analysis(): analysis result has no search context");
+		}
+		if (!Number.isFinite(incoming_visits) || incoming_visits < 0) {
+			throw new Error("receive_analysis(): analysis result has invalid root visits");
+		}
+
+		if (this.has_valid_analysis() && this.analysis_context === context) {
+			let saved_visits = this.analysis.rootInfo.visits;
+			if (!Number.isFinite(saved_visits) || saved_visits < 0) {
+				throw new Error("receive_analysis(): saved analysis has invalid root visits");
+			}
+			if (incoming_visits < saved_visits) {
+				return false;
+			}
+		}
 
 		if (!have_alerted_zobrist_mismatch) {
 			if (config.zobrist_checks && o.rootInfo.thisHash) {
@@ -921,23 +947,43 @@ class Node {
 		}
 
 		this.analysis = o;
+		this.analysis_context = context;
 
 		// this.analysis.moveInfos.sort((a, b) => a.order - b.order);		// KataGo already sends it this way.
 
 		let winrate = this.analysis.rootInfo.winrate * 100;			// SBKV is 0..100
 		if (winrate < 0) winrate = 0;
 		if (winrate > 100) winrate = 100;
-		let val = (winrate).toFixed(1);
+		let val = (winrate).toFixed(2);
 		this.set("SBKV", val);
 
 		let score = this.analysis.rootInfo.scoreLead;
 
 		if (typeof score === "number") {							// scoreLead might not be present if it's a GTP engine.
-			val = score.toFixed(1);
+			val = score.toFixed(2);
 			this.set("OGSC", val);
 		} else {
 			this.delete_key("OGSC");
 		}
+
+		let infos = this.analysis.moveInfos;
+		let best_score = infos.length > 0 ? infos[0].scoreLead : null;
+		if (typeof best_score === "number") {
+			let active_is_b = this.get_board().active === "b";
+			let width = infos.reduce((count, info) => {
+				if (typeof info.scoreLead !== "number") {
+					return count;
+				}
+				let cost = active_is_b
+					? best_score - info.scoreLead
+					: info.scoreLead - best_score;
+				return count + (Math.max(0, cost) <= POSITION_WIDTH_THRESHOLD + Number.EPSILON ? 1 : 0);
+			}, 0);
+			this.set("OGWI", width.toString());
+		} else {
+			this.delete_key("OGWI");
+		}
+		return true;
 	}
 
 	stored_score() {
@@ -961,6 +1007,17 @@ class Node {
 				return null;
 			}
 		}
+	}
+
+	stored_position_width() {
+		if (!this.has_key("OGWI")) {
+			return null;
+		}
+		let width = Number(this.get("OGWI"));
+		if (!Number.isInteger(width) || width < 1) {
+			throw new Error("stored_position_width(): OGWI must be an integer >= 1");
+		}
+		return width;
 	}
 
 	stored_winrate() {
@@ -1199,6 +1256,7 @@ function destroy_tree_recursive(node) {
 		node.children = [];
 		node.props = Object.create(null);
 		node.analysis = null;
+		node.analysis_context = null;
 		node.__board = null;
 		node.destroyed = true;
 		node.__root = null;

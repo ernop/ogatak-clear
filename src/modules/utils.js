@@ -125,19 +125,45 @@ exports.pad = function(s, width, leftflag) {
 	return leftflag ? padding + s : s + padding;
 };
 
+// Points worse than the best available move, from the side to play.
+// Null when KataGo (or GTP) did not supply comparable scoreLeads.
+
+exports.info_cost = function(info, best_lead, active_is_b) {
+	if (typeof best_lead !== "number" || typeof info.scoreLead !== "number") {
+		return null;
+	}
+	let cost = active_is_b ? best_lead - info.scoreLead : info.scoreLead - best_lead;
+	return Math.max(0, cost);
+};
+
+exports.cost_threshold_label = function(n) {
+	if (typeof n !== "number" || n <= 0) {
+		return null;
+	}
+	return `≤ ${n.toFixed(2)}`;
+};
+
 exports.moveinfo_filter = function(node) {
 
 	if (!node.has_valid_analysis()) {
 		return [];
 	}
 
+	let infos = node.analysis.moveInfos;
+	let best_lead = infos.length > 0 ? infos[0].scoreLead : null;
+	let active_is_b = node.get_board().active === "b";
+	let cost_cut = config.cost_threshold;
 	let ret = [];
 
-	for (let info of node.analysis.moveInfos) {
-		if (info.order === 0 || (info.visits > node.analysis.rootInfo.visits * config.visits_threshold)) {
-			if (info.order === 0 || !info.isSymmetryOf) {
-				ret.push(info);
-			}
+	for (let i = 0; i < infos.length; i++) {
+		let info = infos[i];
+		if (i === 0 || cost_cut === 0) {
+			ret.push(info);
+			continue;
+		}
+		let cost = exports.info_cost(info, best_lead, active_is_b);
+		if (cost !== null && cost <= cost_cut + 1e-9) {
+			ret.push(info);
 		}
 	}
 

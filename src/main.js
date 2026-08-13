@@ -25,8 +25,10 @@ const fs = require("fs");
 const path = require("path");
 const alert = require("./modules/alert_main");
 const colour_choices = require("./modules/colour_choices");
+const colour_gradients = require("./modules/colour_gradients");
 const stringify = require("./modules/stringify");
 const {translate, all_languages} = require("./modules/translate");
+const {cost_threshold_label} = require("./modules/utils");
 
 // --------------------------------------------------------------------------------------------------------------
 
@@ -1086,7 +1088,11 @@ function menu_build() {
 				},
 				{
 					label: translate("MENU_AUTOANALYSIS_VISITS"),
-					submenu: visit_submenu(),
+					submenu: visit_submenu("autoanalysis_visits", "visit_options"),
+				},
+				{
+					label: translate("MENU_PONDER_VISITS"),
+					submenu: visit_submenu("ponder_visits", "ponder_visit_options"),
 				},
 				{
 					type: "separator",
@@ -1355,80 +1361,8 @@ function menu_build() {
 			label: translate("MENU_DISPLAY"),
 			submenu: [
 				{
-					label: translate("MENU_VISIT_FILTER"),	// Needs special treatment in hub_settings.js, because its values don't match its labels.
-					submenu: [
-						{
-							label: translate("MENU_ALL"),
-							type: "checkbox",
-							checked: config.visits_threshold === 0,
-							click: () => {
-								win.webContents.send("set", {visits_threshold: 0});
-							}
-						},
-						{
-							type: "separator"
-						},
-						{
-							label: "N > 0.5%",
-							type: "checkbox",
-							checked: config.visits_threshold === 0.005,
-							accelerator: "F1",
-							click: () => {
-								win.webContents.send("set", {visits_threshold: 0.005});
-							}
-						},
-						{
-							label: "N > 1%",
-							type: "checkbox",
-							checked: config.visits_threshold === 0.01,
-							click: () => {
-								win.webContents.send("set", {visits_threshold: 0.01});
-							}
-						},
-						{
-							label: "N > 2%",
-							type: "checkbox",
-							checked: config.visits_threshold === 0.02,
-							accelerator: "F2",
-							click: () => {
-								win.webContents.send("set", {visits_threshold: 0.02});
-							}
-						},
-						{
-							label: "N > 4%",
-							type: "checkbox",
-							checked: config.visits_threshold === 0.04,
-							click: () => {
-								win.webContents.send("set", {visits_threshold: 0.04});
-							}
-						},
-						{
-							label: "N > 6%",
-							type: "checkbox",
-							checked: config.visits_threshold === 0.06,
-							accelerator: "F3",
-							click: () => {
-								win.webContents.send("set", {visits_threshold: 0.06});
-							}
-						},
-						{
-							label: "N > 8%",
-							type: "checkbox",
-							checked: config.visits_threshold === 0.08,
-							click: () => {
-								win.webContents.send("set", {visits_threshold: 0.08});
-							}
-						},
-						{
-							label: "N > 10%",
-							type: "checkbox",
-							checked: config.visits_threshold === 0.1,
-							accelerator: "F4",
-							click: () => {
-								win.webContents.send("set", {visits_threshold: 0.1});
-							}
-						},
-					]
+					label: translate("MENU_CANDIDATE_FILTER"),
+					submenu: cost_filter_submenu(),
 				},
 				{
 					label: translate("MENU_NUMBERS"),
@@ -1723,6 +1657,10 @@ function menu_build() {
 				{
 					label: translate("MENU_COLOURS"),
 					submenu: colour_choices_submenu(),
+				},
+				{
+					label: translate("MENU_GRADIENT"),
+					submenu: gradient_choices_submenu(),
 				},
 				{
 					type: "separator",
@@ -2623,6 +2561,60 @@ function menu_build() {
 	return electron.Menu.buildFromTemplate(template);
 }
 
+function cost_filter_submenu() {
+
+	let ret = [
+		{
+			label: translate("MENU_ALL"),
+			type: "checkbox",
+			checked: config.cost_threshold === 0,
+			click: () => {
+				win.webContents.send("set", {cost_threshold: 0});
+			}
+		},
+		{
+			type: "separator"
+		},
+	];
+
+	for (let n of config_io.cost_threshold_options) {
+		let label = cost_threshold_label(n);
+		ret.push({
+			label,
+			type: "checkbox",
+			checked: config.cost_threshold === n,
+			click: () => {
+				win.webContents.send("set", {cost_threshold: n});
+			}
+		});
+	}
+
+	return ret;
+}
+
+function gradient_choices_submenu() {
+
+	let ret = [];
+
+	for (let item of colour_gradients.items) {
+		if (item.type === "separator") {
+			ret.push({type: "separator"});
+		} else {
+			let label = item.label || colour_gradients.label_of(item.id);
+			ret.push({
+				label,
+				type: "checkbox",
+				checked: config.candidate_gradient === item.id,
+				click: () => {
+					win.webContents.send("set", {candidate_gradient: item.id});
+				}
+			});
+		}
+	}
+
+	return ret;
+}
+
 function colour_choices_submenu() {
 
 	let ret = [];
@@ -2715,17 +2707,17 @@ function komi_submenu() {
 	return ret;
 }
 
-function visit_submenu() {
+function visit_submenu(value_key, options_key) {
 
 	let ret = [];
 
-	for (let n of config.visit_options) {
+	for (let n of config[options_key]) {
 		ret.push({
-			label: n.toString(),
+			label: n.toLocaleString("en-US"),
 			type: "checkbox",
-			checked: config.autoanalysis_visits === n,
+			checked: config[value_key] === n,
 			click: () => {
-				win.webContents.send("set", {autoanalysis_visits: n});
+				win.webContents.send("set", {[value_key]: n});
 			}
 		});
 	}
