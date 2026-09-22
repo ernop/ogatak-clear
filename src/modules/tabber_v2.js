@@ -23,6 +23,10 @@ function init() {
 	ret.create_inactive_tab_at_end(dummy_node);
 	ret.tabs[0] = ACTIVE_TAB_MARKER;
 
+	if (!config.show_tab_strip) {
+		ret.outer_div.classList.add("hidden");
+	}
+
 	let img = document.getElementsByClassName(ret.dom_ids[0])[0];
 	update_img_outline(img, true);
 
@@ -175,7 +179,7 @@ let tabber_prototype = {
 	},
 
 	hide: function() {			// Not used in code, but can be called manually for screenshots etc.
-		this.outer_div.style.display = "none";
+		this.outer_div.classList.add("hidden");
 	},
 };
 
@@ -189,13 +193,18 @@ function update_img(img, node, outlineflag) {
 	img.width = thumb.width;
 	img.height = thumb.height;
 	img.title = node.game_title_text();
-	img.style.margin = `0 16px 16px 16px`;
+	img.classList.add("tab_thumb");
 
 	update_img_outline(img, outlineflag);
 }
 
 function update_img_outline(img, outlineflag) {
-	img.style.outline = outlineflag ? `4px solid ${config.wood_colour}` : "none";
+
+	// The styling rules live in ogatak.css; JS only publishes the configured
+	// colour (as a custom property) and toggles the class.
+
+	document.documentElement.style.setProperty("--wood-colour", config.wood_colour);
+	img.classList.toggle("tab_thumb_current", outlineflag);
 }
 
 function update_title(node) {

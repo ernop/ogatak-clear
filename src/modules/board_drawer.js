@@ -47,6 +47,18 @@ function do_translations(lang) {			// Leave the arg as undefined to use the star
 
 do_translations();
 
+const INFO_BAR_ITEM_IDS = ["rules", "toplay", "caps", "komi", "score", "show", "visits"];
+const INFO_BAR_LABELS = {
+	rules: "rules",
+	toplay: "to play",
+	caps: "caps",
+	komi: "komi",
+	score: "score",
+	show: "show",
+	visits: "visits",
+	players: "players",
+};
+
 // ------------------------------------------------------------------------------------------------
 
 let mouseenter_handlers = new_2d_array(19, 19, null);
@@ -112,7 +124,9 @@ function init() {
 
 	});
 
-	ret.set_infodiv_font_size(config.info_font_size);
+	// The infodiv's font-size comes from the type scale (--fs-body in
+	// ogatak.css); nothing is set from JS.
+
 	return ret;
 }
 
@@ -301,10 +315,6 @@ let board_drawer_prototype = {
 		} else {
 			return Math.max(10, Math.floor((dy - border) / Math.max(width + adjust, height + adjust, 19 + adjust)));
 		}
-	},
-
-	set_infodiv_font_size: function(value) {
-		this.infodiv.style["font-size"] = value.toString() + "px";
 	},
 
 	redo_translations: function() {			// Unused in code, purely for dev purposes.
@@ -1104,8 +1114,19 @@ let board_drawer_prototype = {
 			return;
 		}
 
-		// config.numbers uses various hardcoded strings like "Winrate" etc. But some can be shortened.
-		// We could actually do translations also... but for now it's just to reduce space used...
+		this.infodiv.innerHTML = this.info_bar_html(node, override_moveinfo);
+	},
+
+	visible_info_items: function() {
+		let arr = config.info_bar_items;
+		if (!Array.isArray(arr)) {
+			return Array.from(INFO_BAR_ITEM_IDS);
+		}
+		return arr.filter((id, i) => INFO_BAR_ITEM_IDS.includes(id) && arr.indexOf(id) === i);
+	},
+
+	info_bar_html: function(node, override_moveinfo) {
+
 		let short_strings = {
 			"Winrate": "Win",
 			"Visits": "Visit",
@@ -1113,148 +1134,134 @@ let board_drawer_prototype = {
 		};
 
 		let board = node.get_board();
+		let root = node.get_root();
+		let prop = (key) => root.has_key(key) ? String(root.get(key)).trim() : "";
+		let visible = this.visible_info_items();
+		let hide = (id) => `<span class="info_hide" data-item="${id}" title="Hide">✕</span>`;
 
-		let s1 = "";
-		let s2 = "";
+		let item_html = {
+			rules: () => {
+				let rules = safe_html(node.rules());
+				let long_rules = "";
+				if (rules.length > 14) {
+					long_rules = rules;
+					rules = rules.slice(0, 11) + "...";
+				} else if (rules === "") {
+					rules = t.Unknown;
+				}
+				let inner = `<span class="info_label">${t.Rules}:</span> <span class="info_value">${pad(rules, 14)}</span>`;
+				if (long_rules) {
+					inner = `<span title="${long_rules}">${inner}</span>`;
+				}
+				return `<span class="info_item boardinfo_rules">${inner}${hide("rules")}</span>`;
+			},
+			komi: () => {
+				return `<span class="info_item boardinfo_komi"><span class="info_label">${t.Komi}:</span> ` +
+					`<span class="info_value">${pad(node.komi(), 5)}</span>${hide("komi")}</span>`;
+			},
+			show: () => {
+				let numbers_string;
+				if (!config.candidate_moves) {
+					numbers_string = "(nothing)";
+				} else if (config.no_ponder_no_candidates && !hub.engine.desired) {
+					numbers_string = "(not pondering)";
+				} else {
+					let arr = config.numbers.split(" + ");
+					if (arr.length === 3) {
+						numbers_string = arr.map(s => short_strings[s] || s).join(", ");
+					} else {
+						numbers_string = arr.join(", ");
+					}
+				}
+				return `<span class="info_item boardinfo_numbers"><span class="info_label">${t.Show}:</span> ` +
+					`<span class="info_value">${numbers_string}</span>${hide("show")}</span>`;
+			},
+			toplay: () => {
+				let active = (board.active === "b")
+					? `[<span class="white">${t.B}</span>|${t.W}]`
+					: `[${t.B}|<span class="white">${t.W}</span>]`;
+				return `<span class="info_item boardinfo_active">${active}${hide("toplay")}</span>`;
+			},
+			caps: () => {
+				let stone_counts = `${board.stones_b} : ${board.stones_w}`;
+				let capstring = `${board.caps_by_b} : ${board.caps_by_w}`;
+				let label = config.stone_counts ? t.Stn : t.Caps;
+				let value = config.stone_counts ? stone_counts : capstring;
+				return `<span class="info_item boardinfo_stone_counts"><span class="info_label">${label}:</span> ` +
+					`<span class="info_value">${pad(value, 10)}</span>${hide("caps")}</span>`;
+			},
+			score: () => {
+				let score = "";
+				if (node.has_valid_analysis()) {
+					let lead = override_moveinfo ? override_moveinfo.scoreLead : node.analysis.rootInfo.scoreLead;
+					if (typeof lead === "number") {
+						let leader = lead >= 0 ? "B" : "W";
+						if (lead < 0) lead *= -1;
+						score = `${leader}+${lead.toFixed(2)}`;
+					}
+				} else if (node.has_key("OGSC")) {
+					let lead = parseFloat(node.get("OGSC"));
+					if (!Number.isNaN(lead)) {
+						let leader = lead >= 0 ? "B" : "W";
+						if (lead < 0) lead *= -1;
+						score = `${leader}+${lead.toFixed(2)}`;
+					}
+				}
+				return `<span class="info_item"><span class="info_label">${t.Score}:</span> ` +
+					`<span class="info_value">${pad(score, 7)}</span>${hide("score")}</span>`;
+			},
+			visits: () => {
+				let visits = "";
+				if (node.has_valid_analysis()) {
+					visits = `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[0].visits} / ${node.analysis.rootInfo.visits}`;
+				}
+				return `<span class="info_item"><span class="info_label">${t.Visits}:</span> ` +
+					`<span class="info_value">${pad(visits, 13)}</span>${hide("visits")}</span>`;
+			},
+		};
 
-		// Various spans below use the boardinfo_ prefix for clicking on stuff.
-		// See __start_handlers.js for how that works.
-		//
-		// We will layout our 12 main spans (which can have nested spans inside) like so:
-		//
-		// A   B 2 C 3			(where A and D are special, and the rest lines up)
-		// D   E 5 F 6
+		let parts = [`<div class="info_bar">`];
 
-		// A --------------------------------------------------------------------------------------
-
-		s1 += `<span class="boardinfo_rules"><span class="sand">${t.Rules}: </span>`;
-
-		let rules = safe_html(node.rules());
-		let long_rules = "";
-
-		if (rules.length > 14) {
-			long_rules = rules;
-			rules = rules.slice(0, 11) + "...";
-		} else if (rules === "") {
-			rules = t.Unknown;
+		let black_name = prop("PB");
+		let white_name = prop("PW");
+		if (config.info_bar_show_players && (black_name || white_name)) {
+			let player = (colour, name, rank) => {
+				if (!name) {
+					return `<div class="info_player info_player_${colour}"></div>`;
+				}
+				let stone = colour === "b" ? "black_stone.png" : "white_stone.png";
+				let rank_html = rank ? `<span class="info_player_rank">${safe_html(rank)}</span>` : "";
+				return `<div class="info_player info_player_${colour}">` +
+					`<img src="./gfx/${stone}" class="info_player_stone" alt="">` +
+					`<span class="info_player_name">${safe_html(name)}${rank_html}</span></div>`;
+			};
+			parts.push(`<div class="info_players">`);
+			parts.push(player("b", black_name, prop("BR")));
+			parts.push(`<span class="info_hide" data-item="players" title="Hide players">✕</span>`);
+			parts.push(player("w", white_name, prop("WR")));
+			parts.push(`</div>`);
 		}
 
-		if (long_rules) {
-			s1 += `<span title="${long_rules}">`;
+		parts.push(`<div class="info_stats">`);
+		for (let id of visible) {
+			parts.push(item_html[id]());
 		}
 
-		s1 += `<span class="white">${pad(rules, 14)}</span></span>`;
-
-		if (long_rules) {
-			s1 += `</span>`;
+		let chips = [];
+		if (!config.info_bar_show_players) {
+			chips.push(`<span class="info_chip" data-item="players">+ players</span>`);
 		}
-
-		// B --------------------------------------------------------------------------------------
-
-		s1 += `<span class="boardinfo_komi"> ${t.Komi}: </span>`;
-
-		// 2 --------------------------------------------------------------------------------------
-
-		s1 += `<span class="boardinfo_komi">${pad(node.komi(), 5)}</span>`;
-
-		// C --------------------------------------------------------------------------------------
-
-		s1 += `<span class="boardinfo_numbers"> ${t.Show}: </span>`;
-
-		// 3 --------------------------------------------------------------------------------------
-
-		let numbers_string;
-		if (!config.candidate_moves) {
-			numbers_string = "(nothing)";
-		} else if (config.no_ponder_no_candidates && !hub.engine.desired) {
-			numbers_string = "(not pondering)";
-		} else {
-			let arr = config.numbers.split(" + ");
-			if (arr.length === 3) {
-				numbers_string = arr.map(s => short_strings[s] || s).join(", ");
-			} else {
-				numbers_string = arr.join(", ");
+		for (let id of INFO_BAR_ITEM_IDS) {
+			if (!visible.includes(id)) {
+				chips.push(`<span class="info_chip" data-item="${id}">+ ${INFO_BAR_LABELS[id]}</span>`);
 			}
 		}
-
-		s1 += `<span class="boardinfo_numbers">${numbers_string}</span>`;
-
-		// D --------------------------------------------------------------------------------------
-
-		let foo = `<span class="boardinfo_active">`;
-		foo += (board.active === "b") ? `[<span class="white">${t.B}</span>|${t.W}]` : `[${t.B}|<span class="white">${t.W}</span>]`;
-		foo += `</span>`;
-
-		let stone_counts = `${board.stones_b} : ${board.stones_w}`;
-		let capstring = `${board.caps_by_b} : ${board.caps_by_w}`;
-
-		if (config.stone_counts) {
-			foo += ` <span class="boardinfo_stone_counts">${t.Stn}: </span>`;
-		} else {
-			foo += ` <span class="boardinfo_stone_counts">${t.Caps}: </span>`;
+		if (chips.length) {
+			parts.push(`<span class="info_chips">${chips.join(" ")}</span>`);
 		}
-
-		s2 += `<span>${foo}`;
-
-		if (config.stone_counts) {
-			s2 += `<span class="boardinfo_stone_counts white">${pad(stone_counts, 10)}</span>`;
-		} else {
-			s2 += `<span class="boardinfo_stone_counts white">${pad(capstring, 10)}</span>`;
-		}
-
-		s2 += `</span>`;
-
-		// E --------------------------------------------------------------------------------------
-
-		s2 += `<span> ${t.Score}: </span>`;
-
-		// 5 --------------------------------------------------------------------------------------
-
-		let score = "";
-
-		if (node.has_valid_analysis()) {
-
-			// If there is no specific move being mouseover'd, we now (1.5.3) draw the score from
-			// the rootInfo (previously we drew the score from the top move i.e. moveInfos[0]...
-
-			let lead = override_moveinfo ? override_moveinfo.scoreLead : node.analysis.rootInfo.scoreLead;
-
-			if (typeof lead === "number") {						// scoreLead might not be present if it's a GTP engine.
-				let leader = lead >= 0 ? "B" : "W";
-				if (lead < 0) lead *= -1;
-				score = `${leader}+${lead.toFixed(2)}`;
-			}
-
-		} else if (node.has_key("OGSC")) {
-
-			let lead = parseFloat(node.get("OGSC"));
-			if (!Number.isNaN(lead)) {
-				let leader = lead >= 0 ? "B" : "W";
-				if (lead < 0) lead *= -1;
-				score = `${leader}+${lead.toFixed(2)}`;
-			}
-
-		}
-
-		s2 += `<span>${pad(score, 7)}</span>`;
-
-		// F --------------------------------------------------------------------------------------
-
-		s2 += `<span> ${t.Visits}: </span>`;
-
-		// 6 --------------------------------------------------------------------------------------
-
-		let visits = "";
-
-		if (node.has_valid_analysis()) {
-			visits = `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[0].visits} / ${node.analysis.rootInfo.visits}`;
-		}
-
-		s2 += `<span>${pad(visits, 13)}</span>`;
-
-		// Done....................................................................................
-
-		this.infodiv.innerHTML = s1 + s2;
+		parts.push(`</div>`);
+		parts.push(`</div>`);
+		return parts.join("");
 	},
 
 	draw_engine_problem: function() {

@@ -21,4 +21,4 @@ Width, and score-ranked top-50 candidate-cost properties generated for the
 screenshots. All 181 positions, including the empty starting board, received
 at least 2,500 KataGo visits. Moves 78 and 120 received 10,000 visits for the
 current-position displays. Full candidate records are not stored in SGF, so
-Move Value Distribution still requires live analysis after reopening the file.
+Current Candidate Values still requires live analysis after reopening the file.

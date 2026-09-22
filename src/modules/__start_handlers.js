@@ -88,10 +88,39 @@ board_drawer.htmltable.addEventListener("mousedown", (event) => {
 // Clicking on the boardinfo...
 
 board_drawer.infodiv.addEventListener("mousedown", (event) => {
-	event.preventDefault();
 	if (mousedown_event_is_electron_bug(event)) {
 		return;
 	}
+
+	let chip = event.target.closest(".info_chip");
+	if (chip) {
+		event.preventDefault();
+		let id = chip.dataset.item;
+		if (id === "players") {
+			hub.set("info_bar_show_players", true);
+			return;
+		}
+		let items = board_drawer.visible_info_items().slice();
+		if (!items.includes(id) && ["rules", "toplay", "caps", "komi", "score", "show", "visits"].includes(id)) {
+			items.push(id);
+			hub.set("info_bar_items", items);
+		}
+		return;
+	}
+
+	let hide = event.target.closest(".info_hide");
+	if (hide) {
+		event.preventDefault();
+		let id = hide.dataset.item;
+		if (id === "players") {
+			hub.set("info_bar_show_players", false);
+			return;
+		}
+		hub.set("info_bar_items", board_drawer.visible_info_items().filter(x => x !== id));
+		return;
+	}
+
+	event.preventDefault();
 	let s = event_path_class_string(event, "boardinfo_");
 	if (s === "rules") {
 		hub.cycle_rules(event.button !== 0);

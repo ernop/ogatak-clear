@@ -67,7 +67,7 @@ electron.app.whenReady().then(() => {					// If "ready" event already happened, 
 	// monitor's OS scale.
 	let desired_zoomfactor = config.zoom_factor;
 
-	win = new electron.BrowserWindow({
+	let win_opts = {
 		width: config.width,
 		height: config.height,
 		backgroundColor: "#000000",
@@ -81,7 +81,23 @@ electron.app.whenReady().then(() => {					// If "ready" event already happened, 
 			spellcheck: false,
 			zoomFactor: desired_zoomfactor
 		}
-	});
+	};
+
+	if (typeof config.window_x === "number" && typeof config.window_y === "number") {
+		let visible = electron.screen.getAllDisplays().some((d) => {
+			let b = d.workArea;
+			return config.window_x < b.x + b.width - 80 &&
+				config.window_x + 80 > b.x &&
+				config.window_y < b.y + b.height - 80 &&
+				config.window_y + 40 > b.y;
+		});
+		if (visible) {
+			win_opts.x = config.window_x;
+			win_opts.y = config.window_y;
+		}
+	}
+
+	win = new electron.BrowserWindow(win_opts);
 
 	win.webContents.on("before-input-event", (event, input) => {
 		if (input.type === "keyDown") {
@@ -100,6 +116,30 @@ electron.app.whenReady().then(() => {					// If "ready" event already happened, 
 	win.on("unmaximize", (event) => {					// Note that these are not received when a maximized window is minimized.
 		win.webContents.send("set", {maxed: false});	// I think they are only received when a maximized window becomes normal.
 	});													// So our .maxed var tracks what we are trying to be, when shown at all.
+
+	let bounds_timer = null;
+	let push_window_bounds = () => {
+		if (!have_received_ready || !win || win.isDestroyed()) {
+			return;
+		}
+		if (win.isMaximized() || win.isFullScreen()) {
+			return;
+		}
+		if (bounds_timer) {
+			clearTimeout(bounds_timer);
+		}
+		bounds_timer = setTimeout(() => {
+			bounds_timer = null;
+			if (!win || win.isDestroyed() || win.isMaximized() || win.isFullScreen()) {
+				return;
+			}
+			let [w, h] = win.getContentSize();
+			let b = win.getBounds();
+			win.webContents.send("set", {width: w, height: h, window_x: b.x, window_y: b.y});
+		}, 200);
+	};
+	win.on("resize", push_window_bounds);
+	win.on("move", push_window_bounds);
 
 	// Note: even though there is an event called "restore", if we call win.restore() for a minimized window
 	// which wants to go back to being maximized, it generates a "maximize" event, not a "restore" event.
@@ -1619,6 +1659,14 @@ function menu_build() {
 					checked: config.coordinates,
 					click: () => {
 						win.webContents.send("toggle", "coordinates");
+					}
+				},
+				{
+					label: "Tab strip",
+					type: "checkbox",
+					checked: config.show_tab_strip,
+					click: () => {
+						win.webContents.send("toggle", "show_tab_strip");
 					}
 				},
 				{

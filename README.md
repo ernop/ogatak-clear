@@ -12,8 +12,8 @@ The detailed requirements and rationale are in [PRODUCT.md](PRODUCT.md).
 ![ogatak-clear reviewing Lee Sedol's move 78 against AlphaGo](docs/screenshots/lee-sedol-alphago-game-4-move-78.png)
 
 _Lee Sedol–AlphaGo Game 4 at move 78. Every position in the game was
-autoanalyzed. Width is `1` here, while the blue spray shows that the
-next-ranked alternative is `1.61` points worse; see the
+autoanalyzed. Width is `1` here, while the stored candidate values show that
+the next-ranked alternative is `1.61` points worse; see the
 [source and analysis details](docs/sample-games/README.md)._
 
 * Fork of an analysis GUI for [KataGo](https://github.com/lightvector/KataGo).
@@ -34,14 +34,12 @@ next-ranked alternative is `1.61` points worse; see the
   follow the currently selected variation when rewinding or branching.
   Each independently toggles between full history and a configurable
   sliding window, defaulting to the last 40 moves.
-* Adds **Move Value Distribution**, a ten-bucket histogram of the current
-  top-N candidates, and **Width**, the historical count of moves within
-  `0.30` points of best at each analyzed position. Width describes how
-  broad the strategic possibilities are: a sustained value of `1` means
-  the near-best path has become narrow, while `8` or more means many
-  competitive choices remain. A clustered blue spray alongside Width shows
-  the historical top candidate values relative to `0.00`, with an adjustable
-  top-N limit and adaptive labels.
+* Adds separate **Choice Breadth History** and **Current Candidate Values**
+  charts. One persisted picker switches both between five complete views:
+  focus-plus-tail, fixed bands, cumulative counts, rank landscapes, and a
+  direct decision summary. Width remains the historical count of moves
+  within `0.30` points of best, while fixed tail bands expose alternatives
+  just beyond that cutoff and large gaps to the next credible move.
 * Labels point values with the color they favor (`B+2.30`, `W+0.50`) and
   shows move quality as unsigned points lost versus the best available
   move. On-board candidate labels default to this score-relative Delta.

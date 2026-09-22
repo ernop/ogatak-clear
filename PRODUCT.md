@@ -4,6 +4,9 @@ This file defines what our local Ogatak fork's analysis display must do and
 why. It is the requirements source for `src/modules/move_report.js` and the
 layout changes around it. Written 2026-08-11 from Ernest's requirements.
 
+Window chrome, pane show/hide, sizing, and restart-safe persistence live in
+`PRODUCT-workspace.md`. That file wins when the two disagree about layout.
+
 ## Why (the problem with the stock display)
 
 Stock Ogatak (and Lizzie, KaTrain, Sabaki, and nearly every Go GUI) shows
@@ -115,58 +118,52 @@ reference.
    who led. Click to jump to a move. Together with #6 this replaces the
    stock vertical strip graph; the two must never be merged, because "was
    that move good" and "who is winning" are different questions.
-8. **Move Value Distribution** — a third, separate histogram of the
-   engine-ranked top N candidate moves KataGo has reported for the current
-   position. N defaults to 50, is directly editable in the chart header,
-   redraws immediately, and persists as
-   `move_report_distribution_top_n`. The chart always has exactly ten
-   buckets. x = score points worse than the best move found so far, rounded
-   to hundredths before binning. The first bar is labeled `top` and
-   contains exactly the engine's first-ranked move; even another move tied
-   at 0.00 belongs to the ranged buckets. The remaining nine buckets always
-   use identical-width hundredth-point intervals. Their shared bucket width
-   expands or contracts whenever the current top-N distribution changes.
-   Empty buckets remain visible. y = the count of those top N moves in each
-   range. This is independent of the six-row Next Move Options table and
-   the on-board visit filter and Distance-from-best filter. Near-best
-   bars use the selected gradient's start colour and progressively worse
-   ranges walk toward its end. Counts appear on bars when
-   space permits; axis labels thin automatically as bins narrow while
-   retaining the `top` label and final range. The section is named
-   `distribution`, appears after the other two charts by default, updates
-   with every current-position analysis report, and uses the same live
-   card-width dragger and chart-height controls.
-9. **Width** — a number belonging to each analyzed game position:
+8. **Current Candidate Values** — a separate current-position detail view
+   of candidate costs. It uses every candidate KataGo reported by default;
+   its header accepts `all` or an engine-ranked top-N limit, persisted as
+   `move_report_distribution_top_n` (`0` means all). The display always
+   states how many candidates are shown and how many were reported, because
+   “reported candidates” is knowable while “all available legal moves” is
+   not. The view never silently clips a value tail.
+9. **Choice Breadth History** — a separate historical chart rather than an
+   overlay on Move Quality. It uses each current-line node's stored candidate
+   costs and Width. Clicking navigates to that move; hovering reports exact
+   Width, second-best cost, nearest value beyond 0.30, and stored coverage.
+   Its x range follows Move Quality's full-history/sliding-window setting so
+   the two charts remain directly alignable.
+10. **Paired breadth views** — the global `breadth` picker switches Choice
+   Breadth History and Current Candidate Values together and persists as
+   `move_report_breadth_view`. Every mode is a complete representation:
+
+   - `focus_tail`: historical count lines at 0.10, 0.30, and 1.00; current
+     fixed-detail bins through 0.30 plus explicit 1/3/10-point tail bands and
+     the nearest value outside 0.30.
+   - `fixed_bands`: matching fixed score-cost bands in history and current:
+     best, <=0.10, 0.10–0.30, 0.30–1, 1–3, 3–10, and >10.
+   - `cumulative`: a historical threshold/count heatmap and current
+     cumulative “moves within X points” step plot.
+   - `rank`: a historical value-rank heatmap and current rank-versus-cost
+     curve, with values above ten points explicitly pinned to the top.
+   - `summary`: a historical forced/narrow/open/broad state strip and a
+     current-position metric summary containing threshold counts, gaps,
+     quantiles, and tail values.
+
+11. **Width** — a number belonging to each analyzed game position:
    the count of all candidate moves whose score cost is at most 0.30 points
    worse than the engine's best found move at that position. Width uses all
-   reported `moveInfos`, independent of Move Value Distribution's top-N
+   reported `moveInfos`, independent of Current Candidate Values' top-N
    display limit. It expresses how broad the strategic possibilities are:
    a sustained Width of 1 means that the path of near-best moves is narrow,
    while Width of 8 or more means that many competitive choices remain.
-   Each accepted analysis snapshot stores width as the SGF
-   node property `OGWI`, so the historical series survives save/load.
-   Move Quality overlays that series: at every analyzed node on the current
-   line, a small semi-transparent green point rises from the chart's center
-   line on an independent positive-only scale and is labeled with its width
-   integer. No connecting line is drawn. The overlay is labeled
-   `width: moves ≤0.30` and never changes the Move Quality point-loss axis.
-   Alongside it, a blue **candidate spray** exposes the values behind the
-   count. Each position stores the score-ranked top 50 candidate costs in SGF
-   property `OGWC`; the chart displays an adjustable top N, default 10, via
-   `move_report_width_spray_top_n`. Best is `0.00` at the centerline. Worse
-   moves rise upward on a separate positive-only distance-from-best range and
-   carry negative relative labels such as `−3.00`. The spray follows the
-   Move Quality chart's linear/log-base-2 selection without altering the
-   quality-bar axis. Blue dots separated by fewer than ten rendered pixels
-   combine into one dot whose label preserves the value range and count, such
-   as `−0.08…−0.13 ×3`. Every cluster remains drawn, but labels thin by whole
-   move columns as horizontal space contracts. The current and hovered
-   columns remain labeled; hovering reports every displayed value for that
-   position.
+   Each accepted analysis snapshot stores width as SGF node property `OGWI`,
+   so the historical series survives save/load. Each position also stores
+   the score-ranked top 50 candidate costs in `OGWC`. These values belong
+   only to Choice Breadth History; Move Quality remains a single-purpose
+   chart with no Width or candidate overlays.
 
 ### Current-line semantics
 
-Move Quality, its Width overlay, and Game Status contain the current node and its ancestors
+Move Quality, Choice Breadth History, and Game Status contain the current node and its ancestors
 on the currently selected variation — never unreached future nodes and
 never values taken from the main line merely because it is the main
 line. Each chart independently toggles between full history and a sliding
@@ -177,8 +174,8 @@ header, redraws immediately, and persists through
 moves have been played, window mode shows the complete reached line. Move
 numbers remain absolute rather than restarting at 1. Game Status includes
 the position immediately before the first displayed move solely to draw
-that move's incoming line segment. Move Quality bars, Width, and the
-candidate spray share one quality-window range. Rewinding or changing
+that move's incoming line segment. Move Quality and Choice Breadth History
+share one quality-window range. Rewinding or changing
 variation recalculates both ranges from the newly current line. Ogatak
 starts fresh analysis whenever the current node changes; the charts redraw
 as that analysis arrives. Next Move Options always comes only from the
@@ -229,10 +226,11 @@ zooming) squeezed the panel into a small box surrounded by dead space.
 Requirements now:
 
 1. **The panel container is everything right of the board, top to bottom,
-   out to the window edge.** Nothing else reserves space in that region,
-   and it re-flows on every window resize and zoom change. (The stock
-   comments box used to reserve up to 256px of height at all times, even
-   empty; it no longer can — see 3.)
+   out to the window edge**, except other panes the user has chosen to
+   show there (variation tree, etc. — `PRODUCT-workspace.md`). Nothing
+   silently reserves a grid row. The region re-flows on window resize
+   and zoom; saved pane sizes are the persistence model, not leftover
+   space.
 2. **Sections are fixed-width cards in a wrapping flow.** Each card is
    `move_report_width` wide (default 640px, live-adjustable). On a wide
    panel, cards sit side by side and fill the width; on a narrow one they
@@ -243,17 +241,23 @@ Requirements now:
    still owns the textarea's content; `comment_box_height` (Sizes menu)
    now sets the textarea's own height instead of carving a grid row out
    of the panel's space.
-4. **Named sections, each with its own controls** — `quality`, `status`,
-   `distribution`, `turn`, `lastmove`, `outcome`, `options`, `comments` — header buttons:
-   move up (▲), move down (▼), hide (✕). Hidden sections appear as
-   "+ name" chips in the controls bar, click to restore.
-5. **Sizes are adjustable live from the panel itself**: a dim controls bar
-   at the top offers text −/+ (font size), width −/+ (card width), and
-   chart −/+ (chart height). Dragging the right edge of either chart also
-   changes the shared card width continuously. No dialog, no restart, no
-   menu digging.
+4. **Named sections, each with its own controls** — `quality`, `breadth`,
+   `status`, `distribution`, `turn`, `lastmove`, `outcome`, `options`, `comments`,
+   `tree` — header buttons: move up (▲), move down (▼), hide (✕). Hidden
+   sections appear as "+ name" chips in the controls bar, click to restore.
+   The variation tree is default-hidden; see `PRODUCT-workspace.md`.
+5. **Layout sizes are adjustable live from the panel itself**: a dim
+   controls bar at the top offers width −/+ (card width) and chart −/+
+   (chart height). Dragging the right edge of either chart also changes
+   the shared card width continuously. No dialog, no restart, no menu
+   digging. **Text size is deliberately NOT panel-local**: the panel
+   follows the app-wide `info_font_size` (Sizes → Info font), the same
+   setting as the board info bar, comments, and root editor, so the two
+   sides of the window can never drift apart typographically. All new
+   work must use this existing font management system — never introduce
+   a separate font-size setting or control.
 6. **Every adjustment persists immediately** to Ogatak's `config.json`:
-   `move_report_font_size`, `move_report_width`, `move_report_chart_height`,
+   `move_report_width`, `move_report_chart_height`,
    `move_report_sections` (an ordered array of the visible sections).
    The on-board candidate filter persists as `cost_threshold` (points worse
    than the best available move; current/default 0.30; 0 = All). Candidate
@@ -264,8 +268,12 @@ Requirements now:
    `candidate_gradient`.
    Editing `config.json` by hand is an equally supported path — the array
    IS the template: reorder it, delete from it, and that's the layout.
-7. **All text sizes are em-based** so the single font-size control scales
-   the whole panel coherently.
+7. **All text sizes come from the app's six-step type scale** (hero /
+   emph / body / ui / caption / fine — see `src/modules/type_scale.js`
+   and agents.md "UI conventions"), each a fixed multiple of the single
+   app-wide font setting (`info_font_size`), so the whole panel —
+   including canvas chart labels — scales coherently with one control.
+   Ad-hoc font sizes and inline styles are forbidden.
 
 Implementation: sections are stable DOM boxes reordered via flexbox
 `order` in a `row wrap` flow (the chart canvases are never rebuilt);
@@ -275,9 +283,6 @@ startup, so the stock comment drawer and input handlers are untouched.
 
 ## What is removed
 
-- The **game tree canvas**: not needed for this workflow (navigation is
-  arrow keys, the new chart, and tabs). The tree code is intact but its
-  canvas is hidden; variations still work, they're just not drawn.
 - The **vertical winrate strip** next to the board and its drag handle:
   replaced by the labeled chart in the panel.
 - The **comments box drag handle and its reserved grid rows**: comments
@@ -285,6 +290,10 @@ startup, so the stock comment drawer and input handlers are untouched.
   permanent claim on the panel's space.
 - The **visit-percentage candidate filter**: low-visit moves can be strong
   options, so candidate visibility depends only on points worse than best.
+
+The **variation tree** is not removed. It is a hideable pane (section id
+`tree`), default hidden, restored from the Move Report chip list. See
+`PRODUCT-workspace.md`.
 
 ## Data notes (for implementers)
 

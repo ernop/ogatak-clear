@@ -86,13 +86,20 @@ exports.defaults = {
 	"comment_box_height": 256,
 
 	"zoom_factor": 1.0,							// Whole-UI zoom (Chromium page zoom). Ctrl+= / Ctrl+- / Ctrl+Shift+0.
+	"window_x": null,							// DIP from the OS window (main process getBounds). null = OS default.
+	"window_y": null,
 
-	"move_report_font_size": 15,				// These settings are adjusted live from the Move Report panel's
-	"move_report_width": 640,					// own controls (see move_report.js / PRODUCT.md), but can
-	"move_report_chart_height": 150,			// also be edited here.
-	"move_report_sections": ["quality", "status", "distribution", "turn", "lastmove", "outcome", "options", "comments"],
-	"move_report_distribution_top_n": 50,		// Number of engine-ranked candidates included in Move Value Distribution.
-	"move_report_width_spray_top_n": 10,			// Historical candidate-cost dots drawn per Move Quality column.
+	"show_tab_strip": true,						// Display → Tab strip. PRODUCT-workspace.md.
+	"info_bar_show_players": true,				// Black left / White right on the board info bar when PB/PW exist.
+	"info_bar_items": ["rules", "toplay", "caps", "komi", "score", "show", "visits"],
+	"tree_pane_height": 280,					// Variation-tree card height while the tree is a Move Report section.
+
+	"move_report_width": 640,					// These settings are adjusted live from the Move Report panel's
+	"move_report_chart_height": 150,			// own controls (see move_report.js / PRODUCT.md), but can
+												// also be edited here. Panel text size is info_font_size (above).
+	"move_report_sections": ["quality", "breadth", "status", "distribution", "turn", "lastmove", "outcome", "options", "comments"],
+	"move_report_breadth_view": "focus_tail",	// Paired historical/current candidate-value visualization.
+	"move_report_distribution_top_n": 0,			// 0 = all reported candidates; otherwise use the engine-ranked top N.
 	"move_report_quality_yscale": "linear",		// "linear" or "log2", toggled from the quality chart's header.
 	"move_report_status_yscale": "linear",		// "linear" or "log2", toggled from the status chart's header.
 	"move_report_quality_windowed": false,		// When true, Move Quality shows only its last configured N moves.
@@ -221,6 +228,12 @@ exports.load = () => {
 		}
 	}
 
+	// The breadth experiment replaces the old Move Quality spray. Existing
+	// installations get the new section once and switch the current-position
+	// profile from an arbitrary top-50 sample to all candidates KataGo reported.
+
+	let needs_breadth_setup = !config.hasOwnProperty("move_report_breadth_view");
+
 	// Copy default values for any missing keys into the config...
 	// We use a copy so that any objects that are assigned are not the default objects.
 
@@ -229,6 +242,15 @@ exports.load = () => {
 	for (let key of Object.keys(defaults_copy)) {
 		if (!config.hasOwnProperty(key)) {
 			config[key] = defaults_copy[key];
+		}
+	}
+
+	if (needs_breadth_setup) {
+		config.move_report_distribution_top_n = 0;
+		if (Array.isArray(config.move_report_sections) &&
+			!config.move_report_sections.includes("breadth")) {
+			let quality_index = config.move_report_sections.indexOf("quality");
+			config.move_report_sections.splice(quality_index < 0 ? 0 : quality_index + 1, 0, "breadth");
 		}
 	}
 
@@ -318,14 +340,69 @@ function apply_fixes() {
 	if (!colour_gradients.has(config.candidate_gradient)) {
 		config.candidate_gradient = exports.defaults.candidate_gradient;
 	}
+
+	let breadth_views = ["focus_tail", "fixed_bands", "cumulative", "rank", "summary"];
+	if (!breadth_views.includes(config.move_report_breadth_view)) {
+		config.move_report_breadth_view = exports.defaults.move_report_breadth_view;
+	}
+
+	if (!Number.isInteger(config.move_report_distribution_top_n) ||
+		config.move_report_distribution_top_n < 0 ||
+		config.move_report_distribution_top_n > 1000) {
+		config.move_report_distribution_top_n = exports.defaults.move_report_distribution_top_n;
+	}
+
+	if (typeof config.show_tab_strip !== "boolean") {
+		config.show_tab_strip = exports.defaults.show_tab_strip;
+	}
+	if (typeof config.info_bar_show_players !== "boolean") {
+		config.info_bar_show_players = exports.defaults.info_bar_show_players;
+	}
+	if (!Array.isArray(config.info_bar_items)) {
+		config.info_bar_items = Array.from(exports.defaults.info_bar_items);
+	}
+	if (typeof config.tree_pane_height !== "number" || !Number.isFinite(config.tree_pane_height) || config.tree_pane_height < 80) {
+		config.tree_pane_height = exports.defaults.tree_pane_height;
+	}
+	if (config.window_x !== null && typeof config.window_x !== "number") {
+		config.window_x = null;
+	}
+	if (config.window_y !== null && typeof config.window_y !== "number") {
+		config.window_y = null;
+	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
+
+let save_timer = null;
+
+exports.save_soon = () => {
+
+	// Trailing debounce: persist the current in-memory config shortly after
+	// the last change. Quit calls save() which flushes immediately.
+	// PRODUCT-workspace.md: never wait for Quit as the only write.
+
+	if (errortext) {
+		return;
+	}
+	if (save_timer) {
+		clearTimeout(save_timer);
+	}
+	save_timer = setTimeout(() => {
+		save_timer = null;
+		exports.save();
+	}, 400);
+};
 
 exports.save = () => {
 
 	// Don't save if the load failed. Let the user fix their
 	// broken config file, don't overwrite it with a fresh one.
+
+	if (save_timer) {
+		clearTimeout(save_timer);
+		save_timer = null;
+	}
 
 	if (errortext) {
 		return;

@@ -1,3 +1,37 @@
+/* ----------------------------------------------------------------------------------------------------------------------------------------------- */
+/* THE TYPE SCALE. The entire app uses exactly six font sizes, published as
+   CSS variables by src/modules/type_scale.js from the single user setting
+   info_font_size (Sizes → Info font). The values below are only fallbacks for
+   the instant before script runs; type_scale.js overwrites them at startup
+   and on every setting change.
+
+   Never write an ad-hoc font-size (no em/px literals) anywhere in this file:
+   always reference one of these six variables, or put the fs-* utility class
+   directly on the element. See agents.md "UI conventions". */
+
+:root {
+	--fs-hero: 29px;			/* 1.6x  — the loudest element in a pane: turn banner, verdict, player names */
+	--fs-emph: 23px;			/* 1.25x — emphasised results: last-move line, game result, outcome table, toasts */
+	--fs-body: 18px;			/* 1.0x  — default reading size: tables, comments, board info bar */
+	--fs-ui: 16px;				/* 0.9x  — chrome: controls bars, section headers, metadata */
+	--fs-caption: 14px;			/* 0.8x  — secondary data: ranks, table headers, chart axis labels */
+	--fs-fine: 13px;			/* 0.7x  — floor; dense in-chart annotations only */
+	--wood-colour: #d0ad75ff;	/* kept in sync with config.wood_colour by tabber_v2.js */
+}
+
+.fs-hero    { font-size: var(--fs-hero); }
+.fs-emph    { font-size: var(--fs-emph); }
+.fs-body    { font-size: var(--fs-body); }
+.fs-ui      { font-size: var(--fs-ui); }
+.fs-caption { font-size: var(--fs-caption); }
+.fs-fine    { font-size: var(--fs-fine); }
+
+.hidden {
+	display: none !important;
+}
+
+/* ----------------------------------------------------------------------------------------------------------------------------------------------- */
+
 body {
 	background-color: #080808ff;
 	color: #efefefff;
@@ -70,35 +104,123 @@ body {
 #tabdiv_inner {
 }
 
+.tab_thumb {
+	margin: 0 16px 16px 16px;
+}
+
+.tab_thumb_current {
+	outline: 4px solid var(--wood-colour);
+}
+
 /* ----------------------------------------------------------------------------------------------------------------------------------------------- */
 
 #boardinfo {
 	grid-area: info;
-	display: grid;
-	white-space: pre;
-	grid-template-columns: auto auto auto auto auto;
-	column-gap: 0;
+	display: block;
+	white-space: nowrap;
 	line-height: 1.5em;
 	font-family: monospace, monospace;
+	font-size: var(--fs-body);
 	color: #ffffffff;
 	margin: 16px 0 0 16px;
-	width: max-content;
+	width: 0;
+	min-width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
 }
 
-#boardinfo > :nth-child(5n+1):not(.fullmsg) {
-	color: #e0b872ff;
+.info_bar {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15em;
+	min-width: 0;
 }
 
-#boardinfo > :nth-child(5n+2):not(.fullmsg),
-#boardinfo > :nth-child(5n+4):not(.fullmsg) {
+.info_players {
+	align-items: center;
+	display: flex;
+	gap: 0.6em;
+	min-width: 0;
+}
+
+.info_player {
+	align-items: center;
+	display: flex;
+	flex: 1 1 0;
+	gap: 0.4em;
+	min-width: 0;
+}
+
+.info_player_w {
+	flex-direction: row-reverse;
 	text-align: right;
+}
+
+.info_player_stone {
+	flex: 0 0 auto;
+	height: 1.35em;
+	width: 1.35em;
+}
+
+.info_player_name {
+	font-weight: bold;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.info_player_rank {
+	color: #aaaaaaff;
+	font-size: var(--fs-caption);
+	font-weight: normal;
+	margin-left: 0.4em;
+}
+
+.info_stats {
+	align-items: baseline;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.15em 1.1em;
+	min-width: 0;
+}
+
+.info_item {
+	position: relative;
+}
+
+.info_label {
 	color: #e0b872ff;
+}
+
+.info_value {
+	color: #ffffffff;
+}
+
+.info_hide {
+	color: #666666ff;
+	cursor: pointer;
+	font-size: var(--fs-caption);
+	margin-left: 0.35em;
+	padding: 0 0.2em;
+}
+
+.info_hide:hover {
+	color: #ffffffff;
+}
+
+.info_chip {
+	color: #666666ff;
+	cursor: pointer;
+	padding: 0 0.4em;
+}
+
+.info_chip:hover {
+	color: #ffffffff;
 }
 
 #boardinfo > .fullmsg {
 	color: #ffffffff;
 	text-align: left;
-	grid-column: 1 / -1;
 }
 
 /* ----------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -176,31 +298,39 @@ body.row_dragging, body.row_dragging * {
    Variations still exist and work; they're just not drawn. */
 
 #treecanvas {
-	grid-area: tree;
 	background-color: #111111ff;
-	display: none;
+	display: block;
+	height: 100%;
 	margin: 0;
+	width: 100%;
 }
+
+#mr_seccontent_tree {
+	height: var(--mr-tree-height, 280px);
+	overflow: hidden;
+}
+
+/* All Move Report text uses the six --fs-* variables (see the type scale at
+   the top of this file) — never a panel-local or ad-hoc size. Config-driven
+   layout values (card width, section order, tree pane height) arrive as CSS
+   custom properties set by move_report.js; every actual style rule is here.
+
+   Sections are cards in a wrapping flex flow: on a wide panel they sit side by
+   side using the full width; on a narrow one they stack. "order" reorders them
+   through the flow. */
 
 #movereport {
 	grid-area: tree;
 	background-color: #111111ff;
 	color: #efefefff;
 	font-family: monospace, monospace;
+	font-size: var(--fs-body);
 	overflow-x: hidden;
 	overflow-y: auto;
 	padding: 8px 16px 14px 16px;
 	pointer-events: auto;
 	user-select: none;
 }
-
-/* The panel's font-size and each section card's width are set live from config
-   by move_report.js (adjustable via the panel's own controls). Everything
-   below is in em so it scales with the text control.
-
-   Sections are cards in a wrapping flex flow: on a wide panel they sit side by
-   side using the full width; on a narrow one they stack. "order" reorders them
-   through the flow. */
 
 #mr_inner {
 	display: flex;
@@ -259,7 +389,7 @@ body.row_dragging, body.row_dragging * {
 
 .mr_player_colour {
 	color: #999999ff;
-	font-size: 0.8em;
+	font-size: var(--fs-caption);
 	font-weight: bold;
 	letter-spacing: 0.14em;
 }
@@ -271,14 +401,14 @@ body.row_dragging, body.row_dragging * {
 
 .mr_player_name {
 	color: #ffffffff;
-	font-size: 1.55em;
+	font-size: var(--fs-hero);
 	font-weight: bold;
 	overflow-wrap: anywhere;
 }
 
 .mr_player_rank {
 	color: #aaaaaaff;
-	font-size: 0.65em;
+	font-size: var(--fs-caption);
 	font-weight: normal;
 	margin-left: 0.6em;
 }
@@ -288,21 +418,21 @@ body.row_dragging, body.row_dragging * {
 	color: #999999ff;
 	display: flex;
 	flex-direction: column;
-	font-size: 0.85em;
+	font-size: var(--fs-ui);
 	justify-content: center;
 	text-align: center;
 }
 
 .mr_game_result {
 	color: #ffffffff;
-	font-size: 1.35em;
+	font-size: var(--fs-emph);
 	font-weight: bold;
 	margin-top: 0.25em;
 }
 
 #mr_controls {
 	color: #888888ff;
-	font-size: 0.9em;
+	font-size: var(--fs-ui);
 	letter-spacing: 1px;
 	margin-bottom: 8px;
 	white-space: nowrap;
@@ -338,7 +468,17 @@ body.row_dragging, body.row_dragging * {
 	width: 4.5em;
 }
 
-.mr_metric input:focus {
+.mr_metric select {
+	background-color: #181818ff;
+	border: 1px solid #555555ff;
+	color: #ffffffff;
+	font: inherit;
+	margin-left: 4px;
+	padding: 2px 4px;
+}
+
+.mr_metric input:focus,
+.mr_metric select:focus {
 	border-color: #e0b872ff;
 	outline: none;
 }
@@ -349,11 +489,14 @@ body.row_dragging, body.row_dragging * {
 }
 
 .mr_secbox {
+	/* Preferred wrap width comes from config via a custom property set by
+	   move_report.js; cards expand to fill each row. Order likewise. */
+	flex: 1 1 var(--mr-card-width, 640px);
+	order: var(--mr-sec-order, 0);
 	margin-bottom: 0.8em;
 	max-width: 100%;
 	min-width: 0;
 	position: relative;
-	/* move_report.js sets the preferred flex basis; cards expand to fill each row. */
 }
 
 .mr_sechead {
@@ -361,14 +504,14 @@ body.row_dragging, body.row_dragging * {
 	justify-content: space-between;
 	align-items: baseline;
 	color: #e0b872ff;
-	font-size: 0.8em;
+	font-size: var(--fs-ui);
 	letter-spacing: 2px;
 	margin-bottom: 0.25em;
 }
 
 .mr_secctls {
 	color: #888888ff;
-	font-size: 1.1em;
+	font-size: var(--fs-ui);
 	letter-spacing: 0;
 }
 
@@ -380,6 +523,10 @@ body.row_dragging, body.row_dragging * {
 }
 
 #mr_canvas_distribution {
+	cursor: crosshair;
+}
+
+#mr_canvas_breadth {
 	cursor: crosshair;
 }
 
@@ -416,7 +563,7 @@ body.row_dragging, body.row_dragging * {
 }
 
 .mr_turn {
-	font-size: 1.45em;
+	font-size: var(--fs-hero);
 	font-weight: bold;
 	letter-spacing: 1px;
 }
@@ -428,19 +575,34 @@ body.row_dragging, body.row_dragging * {
 }
 
 .mr_lastmove {
-	font-size: 1.2em;
+	font-size: var(--fs-emph);
 }
 
 .mr_coord {
 	font-weight: bold;
 }
 
+/* Data-driven value colour (candidate gradient): the template binds the
+   colour as a --val-colour custom property; the rule lives here. */
+
+.mr_val {
+	color: var(--val-colour, inherit);
+}
+
 .mr_verdict {
-	font-size: 1.45em;
+	font-size: var(--fs-hero);
 	font-weight: bold;
 	letter-spacing: 1px;
 	margin: 0.1em 0;
 }
+
+/* One class per verdict; colours must match VERDICTS in move_report.js. */
+
+.mr_verdict_excellent  { color: #99ff99ff; }
+.mr_verdict_good       { color: #ccee99ff; }
+.mr_verdict_inaccuracy { color: #ffff66ff; }
+.mr_verdict_mistake    { color: #ffaa44ff; }
+.mr_verdict_blunder    { color: #ff5555ff; }
 
 .mr_quality {
 	line-height: 1.4;
@@ -451,7 +613,7 @@ body.row_dragging, body.row_dragging * {
 }
 
 .mr_small {
-	font-size: 0.8em;
+	font-size: var(--fs-caption);
 	margin-top: 0.3em;
 }
 
@@ -461,7 +623,7 @@ body.row_dragging, body.row_dragging * {
 
 table.mr_outcome {
 	border-collapse: collapse;
-	font-size: 1.1em;
+	font-size: var(--fs-emph);
 }
 
 table.mr_outcome td {
@@ -480,7 +642,7 @@ table.mr_cands td {
 
 table.mr_cands tr.mr_head td {
 	color: #e0b872ff;
-	font-size: 0.8em;
+	font-size: var(--fs-caption);
 }
 
 table.mr_cands tr.mr_cand {
@@ -501,7 +663,10 @@ table.mr_cands tr.mr_cand:hover {
 	cursor: auto;
 	background-color: #181818ff;
 	box-sizing: border-box;
+	display: block;
 	font-family: monospace, monospace;
+	font-size: var(--fs-body);
+	height: var(--comment-height, 256px);
 	margin: 0;
 	overflow-x: hidden;
 	overflow-y: auto;
@@ -568,7 +733,7 @@ table.mr_cands tr.mr_cand:hover {
 
 #toast {
 	position: fixed;
-	font-size: 1.5em;
+	font-size: var(--fs-emph);
 	bottom: 3px;
 	right: 3px;
 	background-color: #ffffffff;

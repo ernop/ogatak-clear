@@ -42,10 +42,19 @@ let tree_drawer_prototype = {
 			return;
 		}
 
-		let bounding_client_rect = this.canvas.getBoundingClientRect();
+		let parent = this.canvas.parentElement;
+		if (!parent || parent.clientWidth < 2 || parent.clientHeight < 2) {
+			this.must_draw = false;
+			this.weak_draw = false;
+			if (this.canvas.width !== 1 || this.canvas.height !== 1) {
+				this.canvas.width = 1;
+				this.canvas.height = 1;
+			}
+			return;
+		}
 
-		let correct_width = Math.max(0, window.innerWidth - bounding_client_rect.left);
-		let correct_height = Math.max(0, window.innerHeight - bounding_client_rect.top - config.comment_box_height - this.commentshandle.offsetHeight);
+		let correct_width = parent.clientWidth;
+		let correct_height = parent.clientHeight;
 		let size_is_ok = this.canvas.width === correct_width && this.canvas.height === correct_height;
 
 		if (!this.must_draw && !this.weak_draw && size_is_ok) {

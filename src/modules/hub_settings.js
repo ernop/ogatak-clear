@@ -4,7 +4,8 @@ const fs = require("fs");
 const path = require("path");
 
 const {ipcRenderer, webFrame} = require("electron");
-const {defaults} = require("./config_io");
+const {defaults, save_soon} = require("./config_io");
+const type_scale = require("./type_scale");
 const {translate} = require("./translate");
 const {deep_equals, cost_threshold_label} = require("./utils");
 const colour_gradients = require("./colour_gradients");
@@ -43,6 +44,7 @@ const togglechecks = {
 	mouseover_pv:			[translate("MENU_DISPLAY"), translate("MENU_WITH_PV_MOUSEOVER")],
 	visit_colours:			[translate("MENU_DISPLAY"), translate("MENU_FADE_BY_VISITS")],
 	next_move_markers:		[translate("MENU_DISPLAY"), translate("MENU_NEXT_MOVE_MARKERS")],
+	show_tab_strip:			[translate("MENU_DISPLAY"), "Tab strip"],
 	embiggen_small_boards:	[translate("MENU_SIZES"), translate("MENU_EMBIGGEN_SMALL_BOARDS")],
 	play_against_policy:	[translate("MENU_MISC"), translate("MENU_ENGINE_PLAYS_POLICY")],
 	play_against_drunk:		[translate("MENU_MISC"), translate("MENU_ENGINE_PLAYS_DRUNK")],
@@ -140,11 +142,11 @@ module.exports = {
 
 		case "info_font_size":
 
-			board_drawer.set_infodiv_font_size(value);
-			comment_drawer.set_font_size(value);
-			fullbox.set_font_size(value);
+			type_scale.apply_to_css();				// Republishes all six --fs-* variables; everything CSS-driven follows.
+			fullbox.set_font_size(value);			// These three are stock upstream overlays with their own mechanism.
 			stderrbox.set_font_size(value);
 			root_editor.set_font_size(value);
+			move_report.draw(this.node);			// Canvas chart text sizes come from the type scale at draw time.
 
 			// Changing the infodiv font will affect the space left for the board, thus...
 
@@ -309,6 +311,17 @@ module.exports = {
 			this.draw();
 			break;
 
+		case "show_tab_strip":
+
+			tabber.outer_div.classList.toggle("hidden", !value);
+			break;
+
+		case "info_bar_show_players":
+		case "info_bar_items":
+
+			this.draw();
+			break;
+
 		}
 
 		// Various fixes to menu items and suchlike................................................
@@ -357,6 +370,8 @@ module.exports = {
 			this.fix_gradient_menu();
 			move_report.draw(this.node);
 		}
+
+		save_soon();
 
 	},
 
@@ -488,6 +503,7 @@ module.exports = {
 		this.draw();													// Currently this is enough.
 		this.fix_colours_menu();
 		this.fix_gradient_menu();
+		save_soon();
 	},
 
 	// --------------------------------------------------------------------------------------------

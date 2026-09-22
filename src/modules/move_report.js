@@ -12,66 +12,90 @@
 //   - Candidate value differences use the Display → Gradient palette,
 //     best = start, worst on the current scale = end. Never a special
 //     colour for the single top move.
-//   - Three chart concepts, never conflated: "quality" (per-move bars: how
-//     well each move was played), "status" (who was winning), and "distribution"
-//     (current candidate moves by points worse than best). Position width is a
-//     separate count series overlaid on quality; its blue candidate spray shows
-//     the underlying historical move values without changing the quality axis.
+//   - Four chart concepts, never conflated: "quality" (per-move bars: how
+//     well each move was played), "status" (who was winning), "breadth"
+//     (historical choice shape), and "distribution" (current candidate moves
+//     by points worse than best). Breadth and distribution switch together
+//     between five paired views.
 //
 // The panel is made of named sections. Their order and visibility live in
-// config.move_report_sections; sizes live in config.move_report_font_size /
-// _width / _chart_height. All are adjustable live from the controls the panel
-// itself renders, and every change is saved to config.json immediately.
+// config.move_report_sections; layout sizes live in config.move_report_width /
+// _chart_height, adjustable live from the controls the panel itself renders,
+// and every change is saved to config.json immediately.
+//
+// Typography and styling rules (agents.md "UI conventions"):
+//   - Every text size comes from the six-step type scale (type_scale.js),
+//     derived from the app-wide info_font_size. DOM text via the --fs-*
+//     variables in ogatak.css; canvas text via type_scale.canvas_font().
+//   - No inline styles: JS publishes config-driven values only as CSS custom
+//     properties (--mr-card-width, --mr-sec-order, ...); every actual style
+//     rule lives in ogatak.css classes.
 
 const config_io = require("./config_io");
 const colour_gradients = require("./colour_gradients");
+const candidate_profile = require("./candidate_profile");
+const type_scale = require("./type_scale");
 const {info_cost, safe_html} = require("./utils");
 
 const SECTION_TITLES = {
 	quality:  "MOVE QUALITY",
+	breadth:  "CHOICE BREADTH HISTORY",
 	status:   "GAME STATUS",
-	distribution: "MOVE VALUE DISTRIBUTION",
+	distribution: "CURRENT CANDIDATE VALUES",
 	turn:     "TURN",
 	lastmove: "LAST MOVE",
 	outcome:  "OUTCOME",
 	options:  "NEXT MOVE OPTIONS",
 	comments: "COMMENTS",
+	tree:     "VARIATION TREE",
 };
 
 const ALL_SECTIONS = Object.keys(SECTION_TITLES);
-const CHART_SECTIONS = ["quality", "status", "distribution"];
+const CHART_SECTIONS = ["quality", "breadth", "status", "distribution"];
 const YSCALE_SECTIONS = ["quality", "status"];
 const HTML_SECTIONS = ["turn", "lastmove", "outcome", "options"];		// Rendered via html_* methods; "comments" hosts the stock textarea instead.
 
 const VERDICTS = [
-	// [max points lost (exclusive), label, colour]
-	[0.5, "EXCELLENT",  "#99ff99ff"],
-	[1.5, "GOOD",       "#ccee99ff"],
-	[3.0, "INACCURACY", "#ffff66ff"],
-	[6.0, "MISTAKE",    "#ffaa44ff"],
-	[Infinity, "BLUNDER", "#ff5555ff"],
+	// [max points lost (exclusive), label, css class (colours live in ogatak.css)]
+	[0.5, "EXCELLENT",  "mr_verdict_excellent"],
+	[1.5, "GOOD",       "mr_verdict_good"],
+	[3.0, "INACCURACY", "mr_verdict_inaccuracy"],
+	[6.0, "MISTAKE",    "mr_verdict_mistake"],
+	[Infinity, "BLUNDER", "mr_verdict_blunder"],
 ];
 
 // Candidate colours come from colour_gradients.js (Display → Gradient).
 
 const LIMITS = {
-	move_report_font_size:    {min: 9,   max: 28,   step: 1},
 	move_report_width:        {min: 320, max: 1280, step: 40},
 	move_report_chart_height: {min: 90,  max: 400,  step: 20},
-	move_report_distribution_top_n: {min: 1, max: 1000, step: 1},
-	move_report_width_spray_top_n: {min: 1, max: 50, step: 1},
+	move_report_distribution_top_n: {min: 0, max: 1000, step: 1},
 	move_report_quality_window_n: {min: 1, max: 1000, step: 1},
 	move_report_status_window_n: {min: 1, max: 1000, step: 1},
 };
 
-const CHART_PAD_LEFT = 44;			// Room for y-axis labels.
-const CHART_PAD_RIGHT = 10;
-const CHART_PAD_TOP = 14;
-const CHART_PAD_BOTTOM = 20;		// Room for x-axis labels.
+// Chart paddings scale with the axis-label font (type scale "caption"), so
+// labels always fit whatever the app-wide font setting is...
+
+function chart_pads() {
+	let cap = type_scale.px("caption");
+	return {
+		left: Math.round(cap * 4),			// Room for y-axis labels.
+		right: Math.round(cap * 0.9),
+		top: Math.round(cap * 1.3),
+		bottom: Math.round(cap * 1.8),		// Room for x-axis labels.
+	};
+}
+
 const CHART_MIN_DEPTH = 20;			// Both charts keep this many x slots so early games aren't stretched.
-const DISTRIBUTION_BUCKET_COUNT = 10;
-const WIDTH_SPRAY_CLUSTER_PX = 10;
-const WIDTH_SPRAY_LABEL_WIDTH = 64;
+const BREADTH_VIEW_LABELS = {
+	focus_tail: "focus + tail",
+	fixed_bands: "fixed bands",
+	cumulative: "cumulative",
+	rank: "rank landscape",
+	summary: "decision summary",
+};
+const PROFILE_COLOURS = ["#58c98bff", "#9bc653ff", "#d7bb49ff", "#dc9846ff", "#c8684cff", "#a84f4fff", "#783f4fff"];
 
 function symmetric_y_scale(abs_max, mode, linear_step) {
 
@@ -102,11 +126,12 @@ function symmetric_y_scale(abs_max, mode, linear_step) {
 }
 
 function chart_plot_rect(canvas) {
+	let pads = chart_pads();
 	return {
-		x0: CHART_PAD_LEFT,
-		x1: canvas.width - CHART_PAD_RIGHT,
-		y0: CHART_PAD_TOP,
-		y1: canvas.height - CHART_PAD_BOTTOM,
+		x0: pads.left,
+		x1: canvas.width - pads.right,
+		y0: pads.top,
+		y1: canvas.height - pads.bottom,
 	};
 }
 
@@ -163,9 +188,13 @@ function init() {
 
 	parts.push(`<div id="mr_game_identity"></div>`);
 	parts.push(`<div id="mr_controls">`);
-	parts.push(`<span class="mr_ctlgroup">text <span class="mr_ctl" data-act="font_down">–</span><span class="mr_ctl" data-act="font_up">+</span></span>`);
 	parts.push(`<span class="mr_ctlgroup">width <span class="mr_ctl" data-act="width_down">–</span><span class="mr_ctl" data-act="width_up">+</span></span>`);
 	parts.push(`<span class="mr_ctlgroup">chart <span class="mr_ctl" data-act="chart_down">–</span><span class="mr_ctl" data-act="chart_up">+</span></span>`);
+	parts.push(`<label class="mr_metric">breadth <select id="mr_breadth_view">`);
+	for (let [value, label] of Object.entries(BREADTH_VIEW_LABELS)) {
+		parts.push(`<option value="${value}">${label}</option>`);
+	}
+	parts.push(`</select></label>`);
 	parts.push(`<span id="mr_hidden_chips"></span>`);
 	parts.push(`</div>`);
 
@@ -180,11 +209,8 @@ function init() {
 			parts.push(`<span class="mr_secctl" id="mr_window_ctl_${sec}" data-sec="${sec}" data-act="window" title="Toggle full history / sliding window">full</span>`);
 			parts.push(`<label class="mr_metric" title="Moves retained when sliding window is enabled">last <input id="mr_window_n_${sec}" type="number" min="1" max="1000" step="1"></label>`);
 		}
-		if (sec === "quality") {
-			parts.push(`<label class="mr_metric" title="Engine-ranked candidate values drawn per historical position">spray <input id="mr_width_spray_top_n" type="number" min="1" max="50" step="1"></label>`);
-		}
 		if (sec === "distribution") {
-			parts.push(`<label class="mr_metric" title="Use only the engine-ranked top N moves">top <input id="mr_distribution_top_n" type="number" min="1" max="1000" step="1"></label>`);
+			parts.push(`<label class="mr_metric" title='Enter "all" or an engine-ranked top N'>candidates <input id="mr_distribution_top_n" type="text" inputmode="numeric"></label>`);
 		}
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="up" title="Move section up">▲</span>`);
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="down" title="Move section down">▼</span>`);
@@ -196,6 +222,9 @@ function init() {
 			parts.push(`<div class="mr_width_drag" title="Drag to resize all sections"></div>`);
 		} else {
 			parts.push(`<div class="mr_seccontent" id="mr_seccontent_${sec}"></div>`);
+			if (sec === "tree") {
+				parts.push(`<div class="mr_width_drag" title="Drag to resize all sections"></div>`);
+			}
 		}
 		parts.push(`</div>`);
 	}
@@ -207,6 +236,7 @@ function init() {
 	// id, so comment_drawer and the input handlers keep working untouched.
 
 	document.getElementById("mr_seccontent_comments").appendChild(document.getElementById("comments"));
+	document.getElementById("mr_seccontent_tree").appendChild(document.getElementById("treecanvas"));
 
 	let ret = Object.assign(Object.create(move_report_prototype), {
 
@@ -217,6 +247,8 @@ function init() {
 
 		quality_canvas: document.getElementById("mr_canvas_quality"),
 		quality_ctx: document.getElementById("mr_canvas_quality").getContext("2d"),
+		breadth_canvas: document.getElementById("mr_canvas_breadth"),
+		breadth_ctx: document.getElementById("mr_canvas_breadth").getContext("2d"),
 		status_canvas: document.getElementById("mr_canvas_status"),
 		status_ctx: document.getElementById("mr_canvas_status").getContext("2d"),
 		distribution_canvas: document.getElementById("mr_canvas_distribution"),
@@ -226,6 +258,8 @@ function init() {
 		chips_cache: "",
 		quality_click_map: null,	// Chart geometries for click-to-navigate.
 		quality_hover_depth: null,
+		breadth_click_map: null,
+		breadth_hover_depth: null,
 		status_click_map: null,
 		distribution_hover_map: null,
 
@@ -276,12 +310,8 @@ function init() {
 		ret.set_distribution_top_n(event.target.value);
 	});
 
-	document.getElementById("mr_width_spray_top_n").addEventListener("input", (event) => {
-		ret.set_width_spray_top_n(event.target.value, false);
-	});
-
-	document.getElementById("mr_width_spray_top_n").addEventListener("change", (event) => {
-		ret.set_width_spray_top_n(event.target.value, true);
+	document.getElementById("mr_breadth_view").addEventListener("change", (event) => {
+		ret.set_breadth_view(event.target.value);
 	});
 
 	for (let sec of YSCALE_SECTIONS) {
@@ -304,19 +334,38 @@ function init() {
 
 	ret.quality_canvas.addEventListener("mousemove", (event) => {
 		let depth = ret.quality_depth_at(event.offsetX);
-		if (depth !== ret.quality_hover_depth) {
-			ret.quality_hover_depth = depth;
-			ret.draw_quality(hub.node);
-		}
-		ret.quality_canvas.title = ret.quality_spray_title(depth);
+		ret.quality_hover_depth = depth;
+		ret.quality_canvas.title = ret.quality_title(depth);
 	});
 
 	ret.quality_canvas.addEventListener("mouseleave", () => {
-		if (ret.quality_hover_depth !== null) {
-			ret.quality_hover_depth = null;
-			ret.draw_quality(hub.node);
-		}
+		ret.quality_hover_depth = null;
 		ret.quality_canvas.title = "";
+	});
+
+	ret.breadth_canvas.addEventListener("mousedown", (event) => {
+		event.preventDefault();
+		let node = ret.node_from_breadth_click(event.offsetX);
+		if (node) {
+			hub.set_node(node, {bless: false});
+		}
+	});
+
+	ret.breadth_canvas.addEventListener("mousemove", (event) => {
+		let depth = ret.breadth_depth_at(event.offsetX);
+		if (depth !== ret.breadth_hover_depth) {
+			ret.breadth_hover_depth = depth;
+			ret.draw_breadth(hub.node);
+		}
+		ret.breadth_canvas.title = ret.breadth_title(depth);
+	});
+
+	ret.breadth_canvas.addEventListener("mouseleave", () => {
+		if (ret.breadth_hover_depth !== null) {
+			ret.breadth_hover_depth = null;
+			ret.draw_breadth(hub.node);
+		}
+		ret.breadth_canvas.title = "";
 	});
 
 	ret.status_canvas.addEventListener("mousedown", (event) => {
@@ -347,6 +396,7 @@ function init() {
 	ret.resize_observer = new ResizeObserver(() => {
 		let widths = [
 			ret.quality_canvas,
+			ret.breadth_canvas,
 			ret.status_canvas,
 			ret.distribution_canvas,
 		].map(canvas => canvas.parentElement.clientWidth);
@@ -366,7 +416,7 @@ function init() {
 		});
 	});
 
-	for (let canvas of [ret.quality_canvas, ret.status_canvas, ret.distribution_canvas]) {
+	for (let canvas of [ret.quality_canvas, ret.breadth_canvas, ret.status_canvas, ret.distribution_canvas]) {
 		ret.resize_observer.observe(canvas.parentElement);
 	}
 
@@ -392,8 +442,6 @@ let move_report_prototype = {
 	adjust: function(act) {
 
 		let [key, dir] = {
-			font_down:  ["move_report_font_size",    -1],
-			font_up:    ["move_report_font_size",    +1],
 			width_down: ["move_report_width",        -1],
 			width_up:   ["move_report_width",        +1],
 			chart_down: ["move_report_chart_height", -1],
@@ -434,12 +482,13 @@ let move_report_prototype = {
 
 	set_distribution_top_n: function(raw_value) {
 
-		let value = Number(raw_value);
+		let cleaned = String(raw_value).trim().toLowerCase();
+		let value = cleaned === "all" ? 0 : Number(cleaned);
 		let lim = LIMITS.move_report_distribution_top_n;
 		let input = document.getElementById("mr_distribution_top_n");
 
-		if (!Number.isInteger(value) || value < lim.min || value > lim.max) {
-			input.setCustomValidity(`Enter a whole number from ${lim.min} to ${lim.max}.`);
+		if (cleaned === "" || !Number.isInteger(value) || value < lim.min || value > lim.max) {
+			input.setCustomValidity(`Enter "all" or a whole number from 1 to ${lim.max}.`);
 			input.reportValidity();
 			return;
 		}
@@ -450,25 +499,11 @@ let move_report_prototype = {
 		this.draw(hub.node);
 	},
 
-	set_width_spray_top_n: function(raw_value, report_invalid) {
-
-		let value = Number(raw_value);
-		let lim = LIMITS.move_report_width_spray_top_n;
-		let input = document.getElementById("mr_width_spray_top_n");
-
-		if (!Number.isInteger(value) || value < lim.min || value > lim.max) {
-			if (report_invalid) {
-				input.setCustomValidity(`Enter a whole number from ${lim.min} to ${lim.max}.`);
-				input.reportValidity();
-			}
-			return;
+	set_breadth_view: function(value) {
+		if (!BREADTH_VIEW_LABELS.hasOwnProperty(value)) {
+			throw new Error(`set_breadth_view(): unsupported view ${value}`);
 		}
-
-		input.setCustomValidity("");
-		if (config.move_report_width_spray_top_n === value) {
-			return;
-		}
-		config.move_report_width_spray_top_n = value;
+		config.move_report_breadth_view = value;
 		config_io.save();
 		this.draw(hub.node);
 	},
@@ -538,17 +573,20 @@ let move_report_prototype = {
 
 	apply_layout: function() {
 
-		this.outer.style.fontSize = config.move_report_font_size.toString() + "px";
+		// No concrete styles are ever set from JS: config-driven layout values
+		// are published as CSS custom properties, and every actual style rule
+		// (including all font sizes, via the --fs-* scale) lives in ogatak.css.
+
+		this.outer.style.setProperty("--mr-card-width", config.move_report_width.toString() + "px");
+		this.outer.style.setProperty("--mr-tree-height", config.tree_pane_height.toString() + "px");
 
 		let visible = this.visible_sections();
 
 		for (let sec of ALL_SECTIONS) {
 			let box = document.getElementById(`mr_secbox_${sec}`);
 			let i = visible.indexOf(sec);
-			box.style.display = (i === -1) ? "none" : "";
-			box.style.order = i.toString();
-			box.style.width = "";
-			box.style.flex = `1 1 ${config.move_report_width}px`;		// Preferred wrap width; the final row expands to fill the panel.
+			box.classList.toggle("hidden", i === -1);
+			box.style.setProperty("--mr-sec-order", i.toString());
 		}
 
 		let chips = ALL_SECTIONS
@@ -587,15 +625,17 @@ let move_report_prototype = {
 		}
 
 		let top_n_input = document.getElementById("mr_distribution_top_n");
+		let top_n_label = config.move_report_distribution_top_n === 0
+			? "all"
+			: config.move_report_distribution_top_n.toString();
 		if (document.activeElement !== top_n_input &&
-			top_n_input.value !== config.move_report_distribution_top_n.toString()) {
-			top_n_input.value = config.move_report_distribution_top_n.toString();
+			top_n_input.value !== top_n_label) {
+			top_n_input.value = top_n_label;
 		}
 
-		let spray_top_n_input = document.getElementById("mr_width_spray_top_n");
-		if (document.activeElement !== spray_top_n_input &&
-			spray_top_n_input.value !== config.move_report_width_spray_top_n.toString()) {
-			spray_top_n_input.value = config.move_report_width_spray_top_n.toString();
+		let breadth_view = document.getElementById("mr_breadth_view");
+		if (breadth_view.value !== config.move_report_breadth_view) {
+			breadth_view.value = config.move_report_breadth_view;
 		}
 	},
 
@@ -622,10 +662,10 @@ let move_report_prototype = {
 		return v.toString();
 	},
 
-	verdict: function(points_lost) {				// --> [label, colour]
-		for (let [max, label, colour] of VERDICTS) {
+	verdict: function(points_lost) {				// --> [label, css class]
+		for (let [max, label, klass] of VERDICTS) {
 			if (points_lost < max) {
-				return [label, colour];
+				return [label, klass];
 			}
 		}
 	},
@@ -699,6 +739,8 @@ let move_report_prototype = {
 		for (let sec of visible) {
 			if (sec === "quality") {
 				this.draw_quality(node);
+			} else if (sec === "breadth") {
+				this.draw_breadth(node);
 			} else if (sec === "status") {
 				this.draw_status(node);
 			} else if (sec === "distribution") {
@@ -710,7 +752,7 @@ let move_report_prototype = {
 					this.content_cache[sec] = html;
 				}
 			}
-			// "comments" needs no drawing here: comment_drawer owns the textarea inside it.
+			// "comments" and "tree" are stock widgets adopted into their cards.
 		}
 	},
 
@@ -783,9 +825,9 @@ let move_report_prototype = {
 
 			if (lost !== null) {
 
-				let [label, colour] = this.verdict(lost);
+				let [label, klass] = this.verdict(lost);
 				let lost_str = lost < 0.005 ? "as good as the engine's best" : `lost ${lost.toFixed(2)} pts vs best`;
-				parts.push(`<div class="mr_verdict" style="color: ${colour}">${label}</div>`);
+				parts.push(`<div class="mr_verdict ${klass}">${label}</div>`);
 
 				// Where was the best move, and how far away did the mover play?
 
@@ -877,15 +919,19 @@ let move_report_prototype = {
 			for (let i = 0; i < infos.length; i++) {
 
 				let info = infos[i];
-				let colour = costs[i] === null ? "#efefefff" : this.value_colour(costs[i], cap);
 				let cost_str = costs[i] === null ? "" : costs[i].toFixed(2);
 
+				// Gradient colours are continuous data, so they can't be classes:
+				// the row binds --val-colour and the .mr_val rule consumes it.
+
+				let val_bind = costs[i] === null ? "" : ` style="--val-colour: ${this.value_colour(costs[i], cap)}"`;
+
 				parts.push(
-					`<tr class="mr_cand" data-gtp="${info.move}">` +
-					`<td class="mr_coord" style="color: ${colour}">${info.move}</td>` +
+					`<tr class="mr_cand" data-gtp="${info.move}"${val_bind}>` +
+					`<td class="mr_coord mr_val">${info.move}</td>` +
 					`<td>${this.fmt_score(info.scoreLead)}</td>` +
 					`<td>${this.fmt_winrate(info.winrate)}</td>` +
-					`<td style="color: ${colour}">${cost_str}</td>` +
+					`<td class="mr_val">${cost_str}</td>` +
 					`<td class="mr_dim">${this.fmt_visits(info.visits)}</td>` +
 					`</tr>`
 				);
@@ -914,103 +960,86 @@ let move_report_prototype = {
 		}
 	},
 
-	// ------------------------------------------------------------ move-value distribution histogram
-	// Top-N root candidates grouped by score cost versus the current best move.
-	// There are always ten buckets. Bucket 0 contains exactly the engine's
-	// top-ranked move; the other nine use identical dynamically-sized ranges.
+	// ------------------------------------------------------------ current candidate-value views
+
+	current_candidate_profile: function(node) {
+		let all = this.candidate_costs(node).filter(candidate => candidate.cost !== null);
+		let limit = config.move_report_distribution_top_n;
+		if (!Number.isInteger(limit) || limit < 0) {
+			throw new Error("current_candidate_profile(): candidate limit must be an integer >= 0");
+		}
+		let shown = limit === 0 ? all : all.slice(0, limit);
+		return candidate_profile.profile(shown.map(candidate => candidate.cost), all.length);
+	},
+
+	distribution_coverage_label: function(profile) {
+		if (profile.reported_total === null) {
+			return `${profile.total} stored candidates`;
+		}
+		return profile.truncated
+			? `${profile.total} of ${profile.reported_total} reported`
+			: `${profile.total} reported candidates`;
+	},
 
 	draw_distribution: function(node) {
-
 		let canvas = this.distribution_canvas;
 		let ctx = this.distribution_ctx;
-
 		this.size_canvas(canvas);
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-		let {x0, x1, y0} = chart_plot_rect(canvas);
-		let y1 = canvas.height - 34;		// Range labels plus an explicit x-axis title.
+		let profile = this.current_candidate_profile(node);
+		let method = `draw_distribution_${config.move_report_breadth_view}`;
+		if (typeof this[method] !== "function") {
+			throw new Error(`draw_distribution(): unsupported view ${config.move_report_breadth_view}`);
+		}
+		this[method](profile);
+	},
 
+	distribution_frame: function(profile, bottom_pad_lines = 2.7) {
+
+		// Vertical reservations are in multiples of the axis-label font
+		// ("caption" in the type scale), so they hold any app font setting.
+
+		let cap = type_scale.px("caption");
+		let canvas = this.distribution_canvas;
+		let ctx = this.distribution_ctx;
+		let {x0, x1, y0: frame_y0} = chart_plot_rect(canvas);
+		let y0 = frame_y0 + Math.round(cap * 1.6);
+		let y1 = canvas.height - Math.round(cap * bottom_pad_lines);
+		this.distribution_hover_map = null;
 		if (x1 - x0 < 40) {
-			this.distribution_hover_map = null;
-			return;
+			return null;
 		}
-
 		ctx.fillStyle = "#181818ff";
-		ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-
-		let top_n = config.move_report_distribution_top_n;
-		if (!Number.isInteger(top_n) || top_n < 1) {
-			throw new Error("draw_distribution(): config.move_report_distribution_top_n must be an integer >= 1");
-		}
-
-		let candidates = this.candidate_costs(node, top_n)
-			.filter(candidate => candidate.cost !== null);
-
-		if (candidates.length === 0) {
-			this.distribution_hover_map = null;
-			ctx.font = "11px monospace";
+		ctx.fillRect(x0, frame_y0, x1 - x0, y1 - frame_y0);
+		ctx.font = type_scale.canvas_font("caption");
+		if (profile.total === 0) {
 			ctx.fillStyle = "#999999ff";
 			ctx.textAlign = "left";
 			ctx.textBaseline = "top";
-			ctx.fillText(hub.engine.desired ? "analysing..." : "no candidate analysis", x0 + 6, y0 + 6);
-			return;
+			ctx.fillText(hub.engine.desired ? "analysing..." : "no candidate analysis", x0 + 6, frame_y0 + 6);
+			return null;
 		}
+		ctx.fillStyle = "#999999ff";
+		ctx.textAlign = "right";
+		ctx.textBaseline = "top";
+		ctx.fillText(this.distribution_coverage_label(profile), x1 - 6, frame_y0 + 6);
+		return {canvas, ctx, x0, x1, y0, y1};
+	},
 
-		let rounded_costs = candidates.slice(1).map(candidate =>
-			Math.max(0, Math.round(candidate.cost * 100))
-		);
-		let range_start_hundredths = rounded_costs.includes(0) ? 0 : 1;
-		let max_hundredths = Math.max(range_start_hundredths, ...rounded_costs);
-		let bucket_width_hundredths = Math.max(
-			1,
-			Math.ceil((max_hundredths - range_start_hundredths + 1) / (DISTRIBUTION_BUCKET_COUNT - 1))
-		);
-		let bin_indexes = [
-			0,
-			...rounded_costs.map(hundredths =>
-				1 + Math.min(
-					DISTRIBUTION_BUCKET_COUNT - 2,
-					Math.floor((hundredths - range_start_hundredths) / bucket_width_hundredths)
-				)
-			),
-		];
-		let bins = new Array(DISTRIBUTION_BUCKET_COUNT).fill(0);
-		for (let index of bin_indexes) {
-			bins[index]++;
-		}
+	draw_profile_bars: function(profile, labels, counts, colours, axis_title) {
+		let frame = this.distribution_frame(profile, 3.1);
+		if (!frame) return;
+		let {canvas, ctx, x0, x1, y0, y1} = frame;
+		let count_max = Math.max(1, ...counts);
+		let count_step = Math.max(1, Math.ceil(count_max / 4));
+		let y_max = Math.ceil(count_max / count_step) * count_step;
+		let y_of = count => y1 - (y1 - y0) * count / y_max;
 
-		let bucket_range = (index) => {
-			if (index === 0) {
-				return {label: "top"};
-			}
-			let low_hundredths = range_start_hundredths + (index - 1) * bucket_width_hundredths;
-			let high_hundredths = low_hundredths + bucket_width_hundredths - 1;
-			let low = (low_hundredths / 100).toFixed(2);
-			let high = (high_hundredths / 100).toFixed(2);
-			return {
-				label: low === high ? low : `${low}–${high}`,
-				detail: low === high
-					? `${low} points worse`
-					: `${low}–${high} points worse`,
-			};
-		};
-
-		// Count axis: about five round-number intervals.
-
-		let count_max = Math.max(...bins);
-		let raw_step = Math.max(1, count_max / 5);
-		let magnitude = Math.pow(10, Math.floor(Math.log10(raw_step)));
-		let normalized = raw_step / magnitude;
-		let count_step = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * magnitude;
-		let y_max = Math.max(1, Math.ceil(count_max / count_step) * count_step);
-		let y_of = (count) => y1 - (y1 - y0) * count / y_max;
-
-		ctx.font = "11px monospace";
 		ctx.textBaseline = "middle";
 		for (let count = 0; count <= y_max; count += count_step) {
 			let y = y_of(count);
 			ctx.strokeStyle = count === 0 ? "#555555ff" : "#2c2c2cff";
-			ctx.lineWidth = 1;
 			ctx.beginPath();
 			ctx.moveTo(x0, y);
 			ctx.lineTo(x1, y);
@@ -1020,189 +1049,560 @@ let move_report_prototype = {
 			ctx.fillText(count.toString(), x0 - 5, y);
 		}
 
-		// Histogram bars use the same best-to-worst gradient as candidate
-		// values elsewhere: near-best bins sit at the start of the palette.
-
-		let slot_w = (x1 - x0) / bins.length;
-		this.distribution_hover_map = {
-			x0,
-			x1,
-			slot_w,
-			bins,
-			bucket_width_hundredths,
-			range_start_hundredths,
-		};
-		for (let i = 0; i < bins.length; i++) {
+		let slot_w = (x1 - x0) / counts.length;
+		let regions = [];
+		for (let i = 0; i < counts.length; i++) {
 			let left = x0 + i * slot_w;
-			let right = x0 + (i + 1) * slot_w;
-			let top = y_of(bins[i]);
-			ctx.fillStyle = this.value_colour(i, DISTRIBUTION_BUCKET_COUNT - 1);
-			ctx.fillRect(left, top, right - left, y1 - top);
+			let right = left + slot_w;
+			let top = y_of(counts[i]);
+			ctx.fillStyle = colours[i];
+			ctx.fillRect(left, top, slot_w, y1 - top);
 			ctx.strokeStyle = "#111111ff";
-			ctx.strokeRect(left, top, right - left, y1 - top);
-
-			if (bins[i] > 0) {
-				let count_label = bins[i].toString();
-				if (slot_w >= ctx.measureText(count_label).width + 4) {
-					ctx.fillStyle = "#ffffffff";
-					ctx.textAlign = "center";
-					ctx.textBaseline = "bottom";
-					ctx.fillText(count_label, (left + right) / 2, Math.max(y0 + 11, top - 2));
-				}
+			ctx.strokeRect(left, top, slot_w, y1 - top);
+			if (counts[i] > 0) {
+				ctx.fillStyle = "#ffffffff";
+				ctx.textAlign = "center";
+				ctx.textBaseline = "bottom";
+				ctx.fillText(counts[i].toString(), (left + right) / 2, Math.max(y0 + type_scale.px("caption") * 2, top - 2));
 			}
-		}
-
-		let range_label = (index) => bucket_range(index).label;
-
-		// Keep the first bin's required "0" label. Thin out later range labels
-		// according to measured text width, while retaining the final range.
-
-		ctx.fillStyle = "#e0b872ff";
-		ctx.textAlign = "center";
-		ctx.textBaseline = "top";
-		let widest_range = Math.max(...bins.map((_, i) => ctx.measureText(range_label(i)).width));
-		let x_step = Math.max(1, Math.ceil((widest_range + 5) / slot_w));
-		let label_indexes = [0];
-		for (let i = x_step; i < DISTRIBUTION_BUCKET_COUNT; i += x_step) {
-			label_indexes.push(i);
-		}
-		let last_bin = DISTRIBUTION_BUCKET_COUNT - 1;
-		if (!label_indexes.includes(last_bin)) {
-			if (label_indexes.length > 1 && last_bin - label_indexes[label_indexes.length - 1] < x_step) {
-				label_indexes.pop();
+			ctx.fillStyle = "#e0b872ff";
+			ctx.textBaseline = "top";
+			if (slot_w >= ctx.measureText(labels[i]).width + 4 || i === 0 || i === labels.length - 1) {
+				ctx.fillText(labels[i], (left + right) / 2, y1 + 5);
 			}
-			label_indexes.push(last_bin);
+			regions.push({x0: left, x1: right, range: labels[i], count: counts[i]});
 		}
-		for (let i of label_indexes) {
-			ctx.fillText(range_label(i), x0 + (i + 0.5) * slot_w, y1 + 5);
-		}
-
-		// Explanatory corner labels survive even when the bins become narrow.
-
-		ctx.textBaseline = "top";
-		ctx.textAlign = "left";
+		this.distribution_hover_map = {regions};
 		ctx.fillStyle = "#99ff99ff";
+		ctx.textAlign = "left";
+		ctx.textBaseline = "top";
 		ctx.fillText("candidate count", x0 + 6, y0 + 6);
-		ctx.textAlign = "right";
-		ctx.fillStyle = "#999999ff";
-		ctx.fillText(`${candidates.length} of top ${top_n} reported`, x1 - 6, y0 + 6);
-
-		ctx.textBaseline = "bottom";
-		ctx.textAlign = "center";
 		ctx.fillStyle = "#e0b872ff";
-		ctx.fillText("score diff from best found move", (x0 + x1) / 2, canvas.height - 2);
+		ctx.textAlign = "center";
+		ctx.textBaseline = "bottom";
+		ctx.fillText(axis_title, (x0 + x1) / 2, canvas.height - 2);
+	},
+
+	draw_distribution_focus_tail: function(profile) {
+		let labels = ["best", "0–.05", ".05–.10", ".10–.15", ".15–.20", ".20–.25", ".25–.30", ".30–1", "1–3", "3–10", ">10"];
+		let counts = new Array(labels.length).fill(0);
+		if (profile.total > 0) counts[0] = 1;
+		for (let cost of profile.alternatives) {
+			if (cost <= .05 + Number.EPSILON) counts[1]++;
+			else if (cost <= .10 + Number.EPSILON) counts[2]++;
+			else if (cost <= .15 + Number.EPSILON) counts[3]++;
+			else if (cost <= .20 + Number.EPSILON) counts[4]++;
+			else if (cost <= .25 + Number.EPSILON) counts[5]++;
+			else if (cost <= .30 + Number.EPSILON) counts[6]++;
+			else if (cost <= 1 + Number.EPSILON) counts[7]++;
+			else if (cost <= 3 + Number.EPSILON) counts[8]++;
+			else if (cost <= 10 + Number.EPSILON) counts[9]++;
+			else counts[10]++;
+		}
+		let colours = labels.map((_, i) => this.value_colour(i, labels.length - 1));
+		this.draw_profile_bars(profile, labels, counts, colours, "fixed near-best focus · explicit tail");
+		let frame = chart_plot_rect(this.distribution_canvas);
+		if (profile.nearest_outside_030 !== null) {
+			let ctx = this.distribution_ctx;
+			ctx.fillStyle = "#b9cde0ff";
+			ctx.textAlign = "left";
+			ctx.textBaseline = "top";
+			ctx.fillText(`nearest outside 0.30: ${profile.nearest_outside_030.toFixed(2)}`, frame.x0 + 6, frame.y0 + 6);
+		}
+	},
+
+	draw_distribution_fixed_bands: function(profile) {
+		this.draw_profile_bars(
+			profile,
+			candidate_profile.BAND_LABELS,
+			profile.bands,
+			PROFILE_COLOURS,
+			"fixed score-cost bands (points worse than best)"
+		);
+	},
+
+	draw_distribution_cumulative: function(profile) {
+		let frame = this.distribution_frame(profile, 3.1);
+		if (!frame) return;
+		let {canvas, ctx, x0, x1, y0, y1} = frame;
+		let labels = ["best", "0.10", "0.30", "1", "3", "10", "all"];
+		let counts = [1, ...profile.within, profile.total];
+		let y_max = Math.max(1, profile.total);
+		let x_of = i => x0 + (x1 - x0) * i / (counts.length - 1);
+		let y_of = count => y1 - (y1 - y0) * count / y_max;
+
+		for (let count = 0; count <= y_max; count += Math.max(1, Math.ceil(y_max / 4))) {
+			let y = y_of(count);
+			ctx.strokeStyle = count === 0 ? "#555555ff" : "#2c2c2cff";
+			ctx.beginPath();
+			ctx.moveTo(x0, y);
+			ctx.lineTo(x1, y);
+			ctx.stroke();
+			ctx.fillStyle = "#e0b872ff";
+			ctx.textAlign = "right";
+			ctx.textBaseline = "middle";
+			ctx.fillText(count.toString(), x0 - 5, y);
+		}
+		ctx.strokeStyle = "#75c9e8ff";
+		ctx.lineWidth = 2;
+		ctx.beginPath();
+		for (let i = 0; i < counts.length; i++) {
+			let x = x_of(i);
+			let y = y_of(counts[i]);
+			if (i === 0) ctx.moveTo(x, y);
+			else {
+				ctx.lineTo(x, y_of(counts[i - 1]));
+				ctx.lineTo(x, y);
+			}
+		}
+		ctx.stroke();
+		let regions = [];
+		for (let i = 0; i < counts.length; i++) {
+			let x = x_of(i);
+			let y = y_of(counts[i]);
+			ctx.fillStyle = "#b3e5f7ff";
+			ctx.beginPath();
+			ctx.arc(x, y, 3, 0, 2 * Math.PI);
+			ctx.fill();
+			ctx.fillStyle = "#ffffffff";
+			ctx.textAlign = "center";
+			ctx.textBaseline = "bottom";
+			ctx.fillText(counts[i].toString(), x, Math.max(y0 + type_scale.px("caption") * 2, y - 4));
+			ctx.fillStyle = "#e0b872ff";
+			ctx.textBaseline = "top";
+			ctx.fillText(labels[i], x, y1 + 5);
+			let half = (x1 - x0) / (counts.length - 1) / 2;
+			regions.push({x0: x - half, x1: x + half, range: `within ${labels[i]} points`, count: counts[i]});
+		}
+		this.distribution_hover_map = {regions};
+		ctx.fillStyle = "#99ff99ff";
+		ctx.textAlign = "left";
+		ctx.textBaseline = "top";
+		ctx.fillText("moves within threshold", x0 + 6, y0 + 6);
+		ctx.fillStyle = "#e0b872ff";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "bottom";
+		ctx.fillText("fixed score-cost threshold (points)", (x0 + x1) / 2, canvas.height - 2);
+	},
+
+	draw_distribution_rank: function(profile) {
+		let frame = this.distribution_frame(profile, 2.5);
+		if (!frame) return;
+		let {canvas, ctx, x0, x1, y0, y1} = frame;
+		let cap = 10;
+		let transform = value => Math.log10(1 + value);
+		let y_of = cost => y1 - (y1 - y0) * transform(Math.min(cap, cost)) / transform(cap);
+		let x_of = rank => profile.total === 1
+			? (x0 + x1) / 2
+			: x0 + (x1 - x0) * (rank - 1) / (profile.total - 1);
+		for (let tick of [0, .1, .3, 1, 3, 10]) {
+			let y = y_of(tick);
+			ctx.strokeStyle = tick === 0 ? "#555555ff" : "#2c2c2cff";
+			ctx.beginPath();
+			ctx.moveTo(x0, y);
+			ctx.lineTo(x1, y);
+			ctx.stroke();
+			ctx.fillStyle = "#e0b872ff";
+			ctx.textAlign = "right";
+			ctx.textBaseline = "middle";
+			ctx.fillText(tick.toString(), x0 - 5, y);
+		}
+		ctx.strokeStyle = "#75c9e8ff";
+		ctx.lineWidth = 2;
+		ctx.beginPath();
+		for (let i = 0; i < profile.costs.length; i++) {
+			let x = x_of(i + 1);
+			let y = y_of(profile.costs[i]);
+			if (i === 0) ctx.moveTo(x, y);
+			else ctx.lineTo(x, y);
+		}
+		ctx.stroke();
+		let slot_w = (x1 - x0) / Math.max(1, profile.total);
+		let regions = [];
+		for (let i = 0; i < profile.costs.length; i++) {
+			let x = x_of(i + 1);
+			let y = y_of(profile.costs[i]);
+			ctx.fillStyle = this.value_colour(Math.min(cap, profile.costs[i]), cap);
+			ctx.beginPath();
+			ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+			ctx.fill();
+			regions.push({
+				x0: x - slot_w / 2,
+				x1: x + slot_w / 2,
+				range: `value rank ${i + 1}: ${profile.costs[i].toFixed(2)} points worse`,
+				count: 1,
+			});
+		}
+		this.distribution_hover_map = {regions};
+		ctx.fillStyle = "#99ff99ff";
+		ctx.textAlign = "left";
+		ctx.textBaseline = "top";
+		ctx.fillText("score cost by value rank", x0 + 6, y0 + 6);
+		ctx.fillStyle = "#e0b872ff";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "bottom";
+		ctx.fillText(`value rank 1–${profile.total} · costs above 10 pin to top`, (x0 + x1) / 2, canvas.height - 2);
+	},
+
+	draw_distribution_summary: function(profile) {
+		let frame = this.distribution_frame(profile, 1.3);
+		if (!frame) return;
+		let {ctx, x0, x1, y0, y1} = frame;
+		let fmt = value => value === null ? "—" : value.toFixed(2);
+		let gap = profile.largest_gap;
+		let metrics = [
+			["≤0.10", profile.within[0].toString()],
+			["≤0.30", profile.within[1].toString()],
+			["≤1.00", profile.within[2].toString()],
+			["second", fmt(profile.second)],
+			["median", fmt(profile.median)],
+			["nearest >0.30", fmt(profile.nearest_outside_030)],
+			["90th percentile", fmt(profile.p90)],
+			["worst shown", fmt(profile.worst)],
+			["largest gap", gap ? `${gap.size.toFixed(2)} @ rank ${gap.rank}` : "—"],
+		];
+		let columns = 3;
+		let rows = Math.ceil(metrics.length / columns);
+		let cell_w = (x1 - x0) / columns;
+		let cell_h = (y1 - y0) / rows;
+
+		// The label uses "fine"; the value takes the biggest scale step whose
+		// label + value stack fits the cell (never an ad-hoc size).
+
+		let label_px = type_scale.px("fine");
+		let value_size = ["body", "caption", "fine"].find(
+			name => 6 + label_px + 3 + type_scale.px(name) <= cell_h
+		) || "fine";
+
+		for (let i = 0; i < metrics.length; i++) {
+			let col = i % columns;
+			let row = Math.floor(i / columns);
+			let x = x0 + col * cell_w + 8;
+			let y = y0 + row * cell_h;
+			ctx.fillStyle = "#888888ff";
+			ctx.textAlign = "left";
+			ctx.textBaseline = "top";
+			ctx.font = type_scale.canvas_font("fine");
+			ctx.fillText(metrics[i][0], x, y + 6);
+			ctx.fillStyle = i < 3 ? "#99ff99ff" : "#ffffffff";
+			ctx.font = type_scale.canvas_font(value_size, "bold");
+			ctx.fillText(metrics[i][1], x, y + 6 + label_px + 3);
+		}
 	},
 
 	distribution_detail_at: function(mousex) {
-
 		let map = this.distribution_hover_map;
-		if (!map || mousex < map.x0 || mousex >= map.x1) {
-			return null;
-		}
-		let index = Math.floor((mousex - map.x0) / map.slot_w);
-		if (index === 0) {
-			return {range: "top move (0.00 points worse)", count: map.bins[index]};
-		}
-		let low_hundredths = map.range_start_hundredths + (index - 1) * map.bucket_width_hundredths;
-		let high_hundredths = low_hundredths + map.bucket_width_hundredths - 1;
-		let low = (low_hundredths / 100).toFixed(2);
-		let high = (high_hundredths / 100).toFixed(2);
-		let range = low === high
-			? `${low} points worse`
-			: `${low}–${high} points worse`;
-		return {range, count: map.bins[index]};
+		if (!map) return null;
+		let region = map.regions.find(item => mousex >= item.x0 && mousex < item.x1);
+		return region ? {range: region.range, count: region.count} : null;
 	},
 
-	width_spray_clusters: function(costs, y_of) {
+	// ------------------------------------------------------------ historical choice breadth
 
-		let points = costs
-			.map(cost => ({cost, y: y_of(cost)}))
-			.sort((a, b) => a.y - b.y);
-		let clusters = [];
-
-		for (let point of points) {
-			let cluster = clusters[clusters.length - 1];
-			if (!cluster || Math.abs(point.y - cluster.last_y) > WIDTH_SPRAY_CLUSTER_PX) {
-				clusters.push({
-					costs: [point.cost],
-					y_sum: point.y,
-					last_y: point.y,
-				});
-			} else {
-				cluster.costs.push(point.cost);
-				cluster.y_sum += point.y;
-				cluster.last_y = point.y;
+	breadth_data: function(node) {
+		let history = node.history();
+		let end_depth = history.length - 1;
+		let {x0, x1, y0, y1} = chart_plot_rect(this.breadth_canvas);
+		let xs = chart_x_scale(
+			x0,
+			x1,
+			end_depth,
+			config.move_report_quality_windowed,
+			config.move_report_quality_window_n
+		);
+		let records = {};
+		for (let d = xs.first_move; d <= end_depth; d++) {
+			let costs = history[d].stored_candidate_costs();
+			if (costs === null) continue;
+			let profile = candidate_profile.profile(costs);
+			let width = history[d].stored_position_width();
+			if (width !== null) {
+				profile.within[1] = width;
+				profile.bands[2] = Math.max(0, width - profile.within[0]);
 			}
+			records[d] = {profile, width};
 		}
-
-		return clusters.map(cluster => {
-			return {
-				costs: cluster.costs,
-				y: cluster.y_sum / cluster.costs.length,
-			};
-		});
+		return {history, end_depth, x0, x1, y0, y1, xs, records};
 	},
 
-	fmt_candidate_relative: function(cost) {
-		return cost <= Number.EPSILON ? "0.00" : `−${cost.toFixed(2)}`;
-	},
-
-	fmt_width_spray_cluster: function(cluster) {
-		let low = Math.min(...cluster.costs);
-		let high = Math.max(...cluster.costs);
-		if (cluster.costs.length === 1) {
-			return this.fmt_candidate_relative(low);
+	draw_breadth: function(node) {
+		let canvas = this.breadth_canvas;
+		let ctx = this.breadth_ctx;
+		this.size_canvas(canvas);
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		let data = this.breadth_data(node);
+		let {x0, x1, y0, y1, xs, end_depth, history} = data;
+		if (x1 - x0 < 40) {
+			this.breadth_click_map = null;
+			return;
 		}
-		let range = low.toFixed(2) === high.toFixed(2)
-			? this.fmt_candidate_relative(low)
-			: `${this.fmt_candidate_relative(low)}…${this.fmt_candidate_relative(high)}`;
-		return `${range} ×${cluster.costs.length}`;
+		ctx.fillStyle = "#181818ff";
+		ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+		this.breadth_click_map = end_depth >= xs.first_move
+			? {x0, slot_w: xs.slot_w, domain_start: xs.domain_start, start_depth: xs.first_move, end_depth, history}
+			: null;
+
+		let method = `draw_breadth_${config.move_report_breadth_view}`;
+		if (typeof this[method] !== "function") {
+			throw new Error(`draw_breadth(): unsupported view ${config.move_report_breadth_view}`);
+		}
+		this[method](data);
+		this.finish_breadth_chart(data);
 	},
 
-	fit_width_spray_label_clusters: function(clusters, max_count) {
+	finish_breadth_chart: function(data) {
+		let {x0, x1, y0, y1, xs, end_depth} = data;
+		let ctx = this.breadth_ctx;
+		ctx.font = type_scale.canvas_font("caption");
+		ctx.fillStyle = "#e0b872ff";
+		ctx.textAlign = "center";
+		ctx.textBaseline = "top";
+		let widest = ctx.measureText(end_depth.toString()).width;
+		let step = Math.max(1, Math.ceil((widest + 4) / xs.slot_w));
+		for (let d = end_depth; d >= xs.first_move; d -= step) {
+			ctx.fillText(d.toString(), xs.x_of(d - 0.5), y1 + 5);
+		}
+		stroke_position_marker(ctx, xs.x_of(end_depth), y0, y1);
+		if (this.breadth_hover_depth !== null &&
+			this.breadth_hover_depth >= xs.first_move &&
+			this.breadth_hover_depth <= end_depth) {
+			let x = xs.x_of(this.breadth_hover_depth);
+			ctx.strokeStyle = "rgba(145, 205, 255, 0.75)";
+			ctx.beginPath();
+			ctx.moveTo(x, y0);
+			ctx.lineTo(x, y1);
+			ctx.stroke();
+		}
+	},
 
-		let fitted = clusters.map(cluster => {
-			return {costs: Array.from(cluster.costs), y: cluster.y};
-		});
-
-		while (fitted.length > max_count) {
-			let merge_at = 0;
-			let closest = Infinity;
-			for (let i = 0; i < fitted.length - 1; i++) {
-				let distance = Math.abs(fitted[i + 1].y - fitted[i].y);
-				if (distance < closest) {
-					closest = distance;
-					merge_at = i;
+	draw_breadth_focus_tail: function(data) {
+		let {x0, x1, y0, y1, xs, records} = data;
+		let ctx = this.breadth_ctx;
+		let series = [
+			{index: 0, label: "≤0.10", colour: "#75c9e8ff"},
+			{index: 1, label: "≤0.30", colour: "#99ff99ff"},
+			{index: 2, label: "≤1.00", colour: "#e0b872ff"},
+		];
+		let y_max = 1;
+		for (let record of Object.values(records)) {
+			y_max = Math.max(y_max, ...record.profile.within.slice(0, 3));
+		}
+		let y_of = count => y1 - (y1 - y0) * count / y_max;
+		for (let count = 0; count <= y_max; count += Math.max(1, Math.ceil(y_max / 4))) {
+			let y = y_of(count);
+			ctx.strokeStyle = count === 0 ? "#555555ff" : "#2c2c2cff";
+			ctx.beginPath();
+			ctx.moveTo(x0, y);
+			ctx.lineTo(x1, y);
+			ctx.stroke();
+			ctx.fillStyle = "#e0b872ff";
+			ctx.font = type_scale.canvas_font("caption");
+			ctx.textAlign = "right";
+			ctx.textBaseline = "middle";
+			ctx.fillText(count.toString(), x0 - 5, y);
+		}
+		for (let item of series) {
+			ctx.strokeStyle = item.colour;
+			ctx.lineWidth = item.index === 1 ? 2 : 1;
+			ctx.beginPath();
+			let started = false;
+			for (let d = data.xs.first_move; d <= data.end_depth; d++) {
+				let record = records[d];
+				if (!record) {
+					started = false;
+					continue;
 				}
+				let x = xs.x_of(d);
+				let y = y_of(record.profile.within[item.index]);
+				if (!started) ctx.moveTo(x, y);
+				else ctx.lineTo(x, y);
+				started = true;
 			}
-			let a = fitted[merge_at];
-			let b = fitted[merge_at + 1];
-			let count = a.costs.length + b.costs.length;
-			fitted.splice(merge_at, 2, {
-				costs: [...a.costs, ...b.costs],
-				y: (a.y * a.costs.length + b.y * b.costs.length) / count,
-			});
+			ctx.stroke();
 		}
-		return fitted;
+		ctx.font = type_scale.canvas_font("fine");
+		ctx.textAlign = "left";
+		ctx.textBaseline = "top";
+		let legend_x = x0 + 6;
+		for (let item of series) {
+			ctx.fillStyle = item.colour;
+			ctx.fillText(item.label, legend_x, y0 + 6);
+			legend_x += ctx.measureText(item.label).width + 14;
+		}
+		ctx.fillStyle = "#999999ff";
+		ctx.textAlign = "right";
+		ctx.fillText("candidate count over time", x1 - 6, y0 + 6);
 	},
 
-	layout_width_spray_labels: function(clusters, min_y, max_y) {
-
-		let gap = 11;
-		let labels = clusters
-			.map(cluster => ({cluster, y: cluster.y}))
-			.sort((a, b) => a.y - b.y);
-
-		for (let i = 0; i < labels.length; i++) {
-			labels[i].y = Math.max(labels[i].y, i === 0 ? min_y : labels[i - 1].y + gap);
+	draw_breadth_fixed_bands: function(data) {
+		let {x0, x1, y0, y1, xs, records} = data;
+		let ctx = this.breadth_ctx;
+		let y_max = 1;
+		for (let record of Object.values(records)) {
+			y_max = Math.max(y_max, record.profile.bands.reduce((sum, count) => sum + count, 0));
 		}
-		if (labels.length > 0 && labels[labels.length - 1].y > max_y) {
-			labels[labels.length - 1].y = max_y;
-			for (let i = labels.length - 2; i >= 0; i--) {
-				labels[i].y = Math.min(labels[i].y, labels[i + 1].y - gap);
+		let y_of = count => y1 - (y1 - y0) * count / y_max;
+		for (let count = 0; count <= y_max; count += Math.max(1, Math.ceil(y_max / 4))) {
+			let y = y_of(count);
+			ctx.strokeStyle = count === 0 ? "#555555ff" : "#2c2c2cff";
+			ctx.beginPath();
+			ctx.moveTo(x0, y);
+			ctx.lineTo(x1, y);
+			ctx.stroke();
+			ctx.fillStyle = "#e0b872ff";
+			ctx.font = type_scale.canvas_font("caption");
+			ctx.textAlign = "right";
+			ctx.textBaseline = "middle";
+			ctx.fillText(count.toString(), x0 - 5, y);
+		}
+		for (let d = xs.first_move; d <= data.end_depth; d++) {
+			let record = records[d];
+			if (!record) continue;
+			let left = xs.x_of(d - 1);
+			let right = xs.x_of(d);
+			let running = 0;
+			for (let i = 0; i < record.profile.bands.length; i++) {
+				let next = running + record.profile.bands[i];
+				ctx.fillStyle = PROFILE_COLOURS[i];
+				ctx.fillRect(left, y_of(next), Math.max(1, right - left), y_of(running) - y_of(next));
+				running = next;
 			}
 		}
-		return labels;
+		ctx.fillStyle = "#111111dd";
+		ctx.fillRect(x0, y0, x1 - x0, type_scale.px("fine") + 10);
+		ctx.font = type_scale.canvas_font("fine");
+		ctx.textAlign = "left";
+		ctx.textBaseline = "top";
+		let legend_x = x0 + 6;
+		for (let i = 0; i < candidate_profile.BAND_LABELS.length; i++) {
+			let label = candidate_profile.BAND_LABELS[i];
+			if (legend_x + ctx.measureText(label).width > x1 - 4) break;
+			ctx.fillStyle = PROFILE_COLOURS[i];
+			ctx.fillText(label, legend_x, y0 + 6);
+			legend_x += ctx.measureText(label).width + 10;
+		}
+	},
+
+	draw_breadth_cumulative: function(data) {
+		let {x0, x1, y0, y1, xs, records} = data;
+		let ctx = this.breadth_ctx;
+		let rows = candidate_profile.THRESHOLDS.length;
+		let max_count = 1;
+		for (let record of Object.values(records)) {
+			max_count = Math.max(max_count, ...record.profile.within);
+		}
+		let row_h = (y1 - y0) / rows;
+		for (let row = 0; row < rows; row++) {
+			let top = y0 + row * row_h;
+			ctx.fillStyle = "#e0b872ff";
+			ctx.font = type_scale.canvas_font("caption");
+			ctx.textAlign = "right";
+			ctx.textBaseline = "middle";
+			ctx.fillText(`≤${candidate_profile.THRESHOLDS[row]}`, x0 - 5, top + row_h / 2);
+			for (let d = xs.first_move; d <= data.end_depth; d++) {
+				let record = records[d];
+				if (!record) continue;
+				let count = record.profile.within[row];
+				let alpha = 0.12 + 0.78 * count / max_count;
+				ctx.fillStyle = `rgba(75, 170, 255, ${alpha.toFixed(3)})`;
+				ctx.fillRect(xs.x_of(d - 1), top, Math.max(1, xs.slot_w), row_h);
+			}
+		}
+		ctx.fillStyle = "#999999ff";
+		ctx.textAlign = "right";
+		ctx.textBaseline = "top";
+		ctx.fillText(`darker = more candidates · max ${max_count}`, x1 - 6, y0 + 6);
+	},
+
+	draw_breadth_rank: function(data) {
+		let {x0, x1, y0, y1, xs, records} = data;
+		let ctx = this.breadth_ctx;
+		let ranks = 10;
+		let row_h = (y1 - y0) / ranks;
+		for (let rank = 0; rank < ranks; rank++) {
+			let top = y0 + rank * row_h;
+			ctx.fillStyle = "#e0b872ff";
+			ctx.font = type_scale.canvas_font("fine");
+			ctx.textAlign = "right";
+			ctx.textBaseline = "middle";
+			ctx.fillText((rank + 1).toString(), x0 - 5, top + row_h / 2);
+			for (let d = xs.first_move; d <= data.end_depth; d++) {
+				let record = records[d];
+				if (!record || rank >= record.profile.costs.length) continue;
+				ctx.fillStyle = this.value_colour(Math.min(10, record.profile.costs[rank]), 10);
+				ctx.fillRect(xs.x_of(d - 1), top, Math.max(1, xs.slot_w), row_h);
+			}
+		}
+		ctx.fillStyle = "#999999ff";
+		ctx.textAlign = "right";
+		ctx.textBaseline = "top";
+		ctx.fillText("rows = value rank · colour = cost (cap 10)", x1 - 6, y0 + 6);
+	},
+
+	draw_breadth_summary: function(data) {
+		let {x0, x1, y0, y1, xs, records} = data;
+		let ctx = this.breadth_ctx;
+		let states = [
+			{max: 1, label: "forced", colour: "#a84f4fff"},
+			{max: 3, label: "narrow", colour: "#dc9846ff"},
+			{max: 7, label: "open", colour: "#9bc653ff"},
+			{max: Infinity, label: "broad", colour: "#58c98bff"},
+		];
+		for (let d = xs.first_move; d <= data.end_depth; d++) {
+			let record = records[d];
+			if (!record) continue;
+			let width = record.profile.within[1];
+			let state = states.find(item => width <= item.max);
+			ctx.fillStyle = state.colour;
+			ctx.fillRect(xs.x_of(d - 1), y0, Math.max(1, xs.slot_w), y1 - y0);
+		}
+		ctx.fillStyle = "#111111dd";
+		ctx.fillRect(x0, y0, x1 - x0, type_scale.px("fine") + 10);
+		ctx.font = type_scale.canvas_font("fine");
+		ctx.textAlign = "left";
+		ctx.textBaseline = "top";
+		let legend_x = x0 + 6;
+		for (let state of states) {
+			let suffix = state.max === Infinity ? "8+" : state.max.toString();
+			let text = `${state.label} ${suffix}`;
+			ctx.fillStyle = state.colour;
+			ctx.fillText(text, legend_x, y0 + 6);
+			legend_x += ctx.measureText(text).width + 12;
+		}
+		ctx.fillStyle = "#111111cc";
+		ctx.fillRect(x0, y1 - 20, x1 - x0, 20);
+		ctx.fillStyle = "#ffffffff";
+		ctx.textAlign = "left";
+		ctx.textBaseline = "middle";
+		ctx.fillText("state = candidates within 0.30 points", x0 + 6, y1 - 10);
+	},
+
+	breadth_depth_at: function(mousex) {
+		let map = this.breadth_click_map;
+		if (!map) return null;
+		let depth = Math.round(map.domain_start + (mousex - map.x0) / map.slot_w);
+		if (depth < map.start_depth || depth > map.end_depth) return null;
+		return depth;
+	},
+
+	breadth_title: function(depth) {
+		let map = this.breadth_click_map;
+		if (!map || depth === null || !map.history[depth]) return "";
+		let costs = map.history[depth].stored_candidate_costs();
+		if (costs === null) return `#${depth}: candidate values have not been stored`;
+		let profile = candidate_profile.profile(costs);
+		let width = map.history[depth].stored_position_width();
+		let width_text = width === null ? profile.within[1] : width;
+		let second = profile.second === null ? "none" : profile.second.toFixed(2);
+		let outside = profile.nearest_outside_030 === null ? "none stored" : profile.nearest_outside_030.toFixed(2);
+		return `#${depth}: ${width_text} within 0.30; second ${second}; nearest outside ${outside}; ${profile.total} values stored`;
+	},
+
+	node_from_breadth_click: function(mousex) {
+		let depth = this.breadth_depth_at(mousex);
+		if (depth === null || !this.breadth_click_map) return null;
+		let node = this.breadth_click_map.history[depth];
+		return !node || node.destroyed ? null : node;
 	},
 
 	// ------------------------------------------------------------ quality bar chart
@@ -1251,36 +1651,12 @@ let move_report_prototype = {
 
 		let w_gains = {};									// depth --> signed points, White-gain POV
 		let y_abs_max = 3;
-		let position_widths = {};
-		let position_width_max = 1;
-		let position_candidate_costs = {};
-		let candidate_cost_max = 1;
 		for (let d = start_depth; d <= end_depth; d++) {
 			let delta = this.points_delta(history[d]);
 			let wg = delta === null ? null : (history[d].has_key("B") ? -delta : delta);
 			w_gains[d] = wg;
 			if (wg !== null && Math.abs(wg) > y_abs_max) {
 				y_abs_max = Math.abs(wg);
-			}
-		}
-		for (let d = start_depth; d <= end_depth; d++) {
-			let width = history[d].stored_position_width();
-			position_widths[d] = width;
-			if (width !== null && width > position_width_max) {
-				position_width_max = width;
-			}
-			let costs = history[d].stored_candidate_costs();
-			position_candidate_costs[d] = costs === null
-				? null
-				: costs
-					.sort((a, b) => a - b)
-					.slice(0, config.move_report_width_spray_top_n);
-			if (position_candidate_costs[d] !== null) {
-				for (let cost of position_candidate_costs[d]) {
-					if (cost > candidate_cost_max) {
-						candidate_cost_max = cost;
-					}
-				}
 			}
 		}
 
@@ -1299,7 +1675,7 @@ let move_report_prototype = {
 
 		// Gridlines and y labels (magnitudes; the regions carry the direction)...
 
-		ctx.font = "11px monospace";
+		ctx.font = type_scale.canvas_font("caption");
 		ctx.textBaseline = "middle";
 
 		for (let v of [0, ...scale.ticks]) {
@@ -1332,118 +1708,10 @@ let move_report_prototype = {
 			ctx.fillRect(bar_left, Math.min(y_zero, y_val), bar_right - bar_left, Math.max(1, Math.abs(y_val - y_zero)));
 		}
 
-		// Candidate spray uses the same linear/log2 transform selected for Move
-		// Quality, but an independent positive-only range. Zero sits on the
-		// centerline; moves farther below the best found move rise upward.
-
-		let candidate_scale = symmetric_y_scale(
-			candidate_cost_max,
-			config.move_report_quality_yscale,
-			(max) => max <= 3 ? 1 : max <= 6 ? 2 : max <= 15 ? 5 : 10
-		);
-		let candidate_t_max = candidate_scale.transform(candidate_scale.y_max);
-		let candidate_y_of = (cost) => {
-			return y_zero - (y_zero - y0) * candidate_scale.transform(cost) / candidate_t_max;
-		};
-		let spray_clusters = {};
-
-		ctx.fillStyle = "rgba(75, 170, 255, 0.62)";
-		for (let d = start_depth; d <= end_depth; d++) {
-			let costs = position_candidate_costs[d];
-			if (costs === null || costs.length === 0) {
-				continue;
-			}
-			let clusters = this.width_spray_clusters(costs, candidate_y_of);
-			spray_clusters[d] = clusters;
-			let x = xs.x_of(d);
-			for (let cluster of clusters) {
-				ctx.beginPath();
-				ctx.arc(x, cluster.y, cluster.costs.length > 1 ? 3.5 : 2.25, 0, 2 * Math.PI);
-				ctx.fill();
-			}
-		}
-
-		// Labels thin by whole columns as horizontal space contracts. The
-		// current and hovered columns remain labeled at every density.
-
-		let spray_label_step = Math.max(1, Math.ceil(WIDTH_SPRAY_LABEL_WIDTH / Math.max(1, slot_w)));
-		let labeled_depths = new Set([end_depth]);
-		for (let d = end_depth; d >= start_depth; d -= spray_label_step) {
-			labeled_depths.add(d);
-		}
-		if (this.quality_hover_depth !== null) {
-			labeled_depths.add(this.quality_hover_depth);
-		}
-
-		ctx.font = "9px monospace";
-		ctx.textBaseline = "middle";
-		for (let d of labeled_depths) {
-			let clusters = spray_clusters[d];
-			if (!clusters) {
-				continue;
-			}
-			let x = xs.x_of(d);
-			let on_right = x > (x0 + x1) / 2;
-			ctx.textAlign = on_right ? "right" : "left";
-			let label_min_y = y0 + 32;
-			let label_max_y = y_zero - 6;
-			let max_labels = Math.max(1, Math.floor((label_max_y - label_min_y) / 11) + 1);
-			let fitted = this.fit_width_spray_label_clusters(clusters, max_labels);
-			let labels = this.layout_width_spray_labels(fitted, label_min_y, label_max_y);
-			for (let label of labels) {
-				let text = this.fmt_width_spray_cluster(label.cluster);
-				let text_x = x + (on_right ? -5 : 5);
-				let text_width = ctx.measureText(text).width;
-
-				if (Math.abs(label.y - label.cluster.y) > 1) {
-					ctx.strokeStyle = "rgba(75, 170, 255, 0.45)";
-					ctx.beginPath();
-					ctx.moveTo(x, label.cluster.y);
-					ctx.lineTo(x + (on_right ? -3 : 3), label.y);
-					ctx.stroke();
-				}
-
-				ctx.fillStyle = "rgba(15, 15, 15, 0.82)";
-				ctx.fillRect(
-					on_right ? text_x - text_width - 2 : text_x - 2,
-					label.y - 5,
-					text_width + 4,
-					10
-				);
-				ctx.fillStyle = "rgba(145, 205, 255, 0.92)";
-				ctx.fillText(text, text_x, label.y);
-			}
-		}
-
-		// Position width is the number of candidates within 0.30 points of the
-		// best found move at that node. It has its own positive-only scale from
-		// the center line to the chart top and does not alter the quality axis.
-
-		let width_scale_max = Math.max(5, position_width_max);
-		ctx.font = "9px monospace";
-		ctx.textBaseline = "bottom";
-		for (let d = start_depth; d <= end_depth; d++) {
-			let width = position_widths[d];
-			if (width === null) {
-				continue;
-			}
-			let x = xs.x_of(d);
-			let y = y_zero - (y_zero - y0) * width / width_scale_max;
-
-			ctx.fillStyle = "rgba(102, 255, 102, 0.55)";
-			ctx.beginPath();
-			ctx.arc(x, y, 3, 0, 2 * Math.PI);
-			ctx.fill();
-
-			ctx.fillStyle = "rgba(153, 255, 153, 0.75)";
-			ctx.textAlign = d === start_depth ? "left" : d === end_depth ? "right" : "center";
-			ctx.fillText(width.toString(), x, y - 4);
-		}
-
 		// Fit as many move numbers as the available width allows. Anchor the
 		// sequence at the last move so it is labeled in every case.
 
-		ctx.font = "11px monospace";
+		ctx.font = type_scale.canvas_font("caption");
 		ctx.fillStyle = "#e0b872ff";
 		ctx.textAlign = "center";
 		ctx.textBaseline = "top";
@@ -1459,11 +1727,6 @@ let move_report_prototype = {
 		ctx.textBaseline = "middle";
 		ctx.fillStyle = "#ffffffff";
 		ctx.fillText("white gains", x0 + 6, y0 + 8);
-		ctx.textAlign = "right";
-		ctx.fillStyle = "rgba(153, 255, 153, 0.75)";
-		ctx.fillText("width: moves ≤0.30", x1 - 6, y0 + 8);
-		ctx.fillStyle = "rgba(145, 205, 255, 0.88)";
-		ctx.fillText(`blue: top ${config.move_report_width_spray_top_n} values vs best`, x1 - 6, y0 + 20);
 		ctx.textAlign = "left";
 		ctx.fillStyle = "#999999ff";
 		ctx.fillText("black gains", x0 + 6, y1 - 8);
@@ -1487,21 +1750,16 @@ let move_report_prototype = {
 		return depth;
 	},
 
-	quality_spray_title: function(depth) {
+	quality_title: function(depth) {
 
 		let map = this.quality_click_map;
 		if (!map || depth === null || !map.history[depth]) {
 			return "";
 		}
-		let costs = map.history[depth].stored_candidate_costs();
-		if (costs === null || costs.length === 0) {
-			return `#${depth}: candidate values have not been stored`;
-		}
-		let shown = costs
-			.slice(0, config.move_report_width_spray_top_n)
-			.map(cost => this.fmt_candidate_relative(cost))
-			.join(", ");
-		return `#${depth} candidate values vs best: ${shown}`;
+		let delta = this.points_delta(map.history[depth]);
+		return delta === null
+			? `#${depth}: move quality unavailable`
+			: `#${depth}: ${Math.abs(delta).toFixed(2)} points`;
 	},
 
 	node_from_quality_click: function(mousex) {
@@ -1591,7 +1849,7 @@ let move_report_prototype = {
 
 		// Axes and gridlines...
 
-		ctx.font = "11px monospace";
+		ctx.font = type_scale.canvas_font("caption");
 		ctx.textBaseline = "middle";
 
 		for (let v of [0, ...scale.ticks]) {

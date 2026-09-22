@@ -9,8 +9,7 @@ function init() {
 		handle_drag_start_y: 0,							// by the mouse's movement since the drag started,
 		handle_drag_start_height: 0,					// so there's no jump on grabbing the handle.
 	});
-	ret.set_font_size(config.info_font_size);
-	ret.apply_height();
+	ret.apply_height();									// Font size comes from the type scale (--fs-body in ogatak.css).
 	return ret;
 }
 
@@ -45,23 +44,20 @@ let comment_drawer_prototype = {
 		if (config.comment_box_height <= 0) {
 			this.textarea.blur();
 			this.textarea.value = "";
-			this.textarea.style.display = "none";
+			this.textarea.classList.add("hidden");
 			this.textarea.readOnly = true;				// Maybe paranoia, but it should never be edited by the user in this condition.
 		} else {
 			this.textarea.readOnly = false;
 			this.textarea.value = s;					// safe_html(s);			// Not needed for textarea I guess.
-			this.textarea.style.display = "block";
+			this.textarea.classList.remove("hidden");
 		}
-	},
-
-	set_font_size: function(value) {
-		this.textarea.style["font-size"] = value.toString() + "px";
 	},
 
 	apply_height: function() {							// Apply config.comment_box_height
 		// Fork change: the textarea lives inside the Move Report panel's comments
 		// section, so the height applies to the textarea itself, not to grid rows.
-		this.textarea.style.height = Math.max(0, config.comment_box_height).toString() + "px";
+		// Published as a custom property; the style rule is in ogatak.css.
+		this.textarea.style.setProperty("--comment-height", Math.max(0, config.comment_box_height).toString() + "px");
 	}
 };
 

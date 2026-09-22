@@ -62,12 +62,9 @@
 	// There is likely a race here, as we might notice the window has changed size before the hub
 	// has received a notification from main.js to change the value of "maxed" ... meh.
 
-	if (!config.maxed) {
-		if (config.width !== window.innerWidth || config.height !== window.innerHeight) {
-			config.width = window.innerWidth;
-			config.height = window.innerHeight;
-		}
-	}
+	// Window DIP size is owned by main.js (getContentSize / getBounds).
+	// Never copy window.innerWidth here: that is zoomed CSS pixels.
+	// See PRODUCT-workspace.md.
 
 	hub.redraw_if_desired_square_size_mismatch();
 
