@@ -7,7 +7,7 @@ const {ipcRenderer, webFrame} = require("electron");
 const {defaults, save_soon} = require("./config_io");
 const type_scale = require("./type_scale");
 const {translate} = require("./translate");
-const {deep_equals, cost_threshold_label} = require("./utils");
+const {deep_equals, cost_threshold_label, candidate_count_label} = require("./utils");
 const colour_gradients = require("./colour_gradients");
 
 const {NORMAL, AUTOANALYSIS, BACKANALYSIS, SELFPLAY, AUTOSCROLL, PLAY_BLACK, PLAY_WHITE} = require("./enums");
@@ -175,7 +175,10 @@ module.exports = {
 		case "no_ponder_no_candidates":
 		case "numbers":
 		case "stone_counts":
+		case "candidate_filter":
 		case "cost_threshold":
+		case "candidate_count":
+		case "candidate_min_visits":
 		case "always_show_next_move_eval":
 		case "candidate_gradient":
 		case "mouseover_pv":
@@ -362,7 +365,7 @@ module.exports = {
 			this.fix_play_against_checks();
 		}
 
-		if (key === "cost_threshold") {
+		if (key === "candidate_filter" || key === "cost_threshold" || key === "candidate_count") {
 			this.fix_cost_filter_menu();
 		}
 
@@ -484,7 +487,9 @@ module.exports = {
 	},
 
 	fix_cost_filter_menu: function() {
-		let label = cost_threshold_label(config.cost_threshold) || translate("MENU_ALL");
+		let label = config.candidate_filter === "count"
+			? candidate_count_label(config.candidate_count)
+			: cost_threshold_label(config.cost_threshold) || translate("MENU_ALL");
 		ipcRenderer.send("set_checks", [translate("MENU_DISPLAY"), translate("MENU_CANDIDATE_FILTER"), label]);
 	},
 

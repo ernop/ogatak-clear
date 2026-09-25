@@ -65,8 +65,11 @@ exports.defaults = {
 	"candidate_moves": true,
 	"no_ponder_no_candidates": false,
 	"numbers": "Delta",							// Lame stringly typed. Fork default: points vs best available (0 = best), not visits (PRODUCT.md).
+	"candidate_filter": "cost",					// "cost": use cost_threshold. "count": best move + candidate_count lowest-cost moves.
 	"cost_threshold": 0.3,						// Max points worse than the best available move; independent of visits.
-	"always_show_next_move_eval": true,			// When candidate circles are on, also show the game's next move if KataGo evaluated it.
+	"candidate_count": 4,						// Count mode: how many moves beyond the best. The game's next move is always added.
+	"candidate_min_visits": 50,					// Count mode: visits a move needs to take one of those places. 0 = no minimum.
+	"always_show_next_move_eval": true,			// Cost mode: also show the game's next move if KataGo evaluated it.
 	"candidate_gradient": "green_red",			// See colour_gradients.js. "classic" uses the Colours-menu pair.
 	"mouseover_pv": true,
 	"mouseover_delay": 0,
@@ -97,7 +100,7 @@ exports.defaults = {
 	"move_report_width": 640,					// These settings are adjusted live from the Move Report panel's
 	"move_report_chart_height": 150,			// own controls (see move_report.js / PRODUCT.md), but can
 												// also be edited here. Panel text size is info_font_size (above).
-	"move_report_sections": ["quality", "breadth", "status", "distribution", "turn", "lastmove", "outcome", "options", "comments"],
+	"move_report_sections": ["quality", "breadth", "status", "distribution", "turn", "lastmove", "outcome", "options", "history", "comments"],
 	"move_report_breadth_view": "focus_tail",	// Paired historical/current candidate-value visualization.
 	"move_report_distribution_top_n": 0,			// 0 = all reported candidates; otherwise use the engine-ranked top N.
 	"move_report_quality_yscale": "linear",		// "linear" or "log2", toggled from the quality chart's header.
@@ -106,6 +109,7 @@ exports.defaults = {
 	"move_report_quality_window_n": 40,
 	"move_report_status_windowed": false,		// Game Status has an independent full-history / sliding-window toggle.
 	"move_report_status_window_n": 40,
+	"move_report_history_xscale": "log",		// Eval history time axis: "log" or "linear", toggled from its header.
 
 	"tree_spacing": 24,
 	"tree_off_colour": "#444444ff",
@@ -187,6 +191,7 @@ exports.defaults = {
 };
 
 exports.cost_threshold_options = [0.3, 0.5, 1, 1.5, 2, 3, 5, 8];
+exports.candidate_count_options = [0, 1, 2, 3, 4, 5, 6, 8, 10];
 
 // ---------------------------------------------------------------------------------------------------------------------------
 
@@ -233,6 +238,7 @@ exports.load = () => {
 	// profile from an arbitrary top-50 sample to all candidates KataGo reported.
 
 	let needs_breadth_setup = !config.hasOwnProperty("move_report_breadth_view");
+	let needs_history_setup = !config.hasOwnProperty("move_report_history_xscale");
 
 	// Copy default values for any missing keys into the config...
 	// We use a copy so that any objects that are assigned are not the default objects.
@@ -252,6 +258,14 @@ exports.load = () => {
 			let quality_index = config.move_report_sections.indexOf("quality");
 			config.move_report_sections.splice(quality_index < 0 ? 0 : quality_index + 1, 0, "breadth");
 		}
+	}
+
+	// Existing installations get the Eval history card once; hiding it later sticks.
+
+	if (needs_history_setup && Array.isArray(config.move_report_sections) &&
+		!config.move_report_sections.includes("history")) {
+		let options_index = config.move_report_sections.indexOf("options");
+		config.move_report_sections.splice(options_index < 0 ? config.move_report_sections.length : options_index + 1, 0, "history");
 	}
 
 	apply_fixes();
@@ -329,8 +343,20 @@ function apply_fixes() {
 		config.graph_type = exports.defaults.graph_type;
 	}
 
+	if (config.candidate_filter !== "cost" && config.candidate_filter !== "count") {
+		config.candidate_filter = exports.defaults.candidate_filter;
+	}
+
 	if (typeof config.cost_threshold !== "number" || !Number.isFinite(config.cost_threshold) || config.cost_threshold < 0) {
 		config.cost_threshold = exports.defaults.cost_threshold;
+	}
+
+	if (!Number.isInteger(config.candidate_count) || config.candidate_count < 0 || config.candidate_count > 1000) {
+		config.candidate_count = exports.defaults.candidate_count;
+	}
+
+	if (!Number.isInteger(config.candidate_min_visits) || config.candidate_min_visits < 0) {
+		config.candidate_min_visits = exports.defaults.candidate_min_visits;
 	}
 
 	if (typeof config.always_show_next_move_eval !== "boolean") {
@@ -339,6 +365,10 @@ function apply_fixes() {
 
 	if (!colour_gradients.has(config.candidate_gradient)) {
 		config.candidate_gradient = exports.defaults.candidate_gradient;
+	}
+
+	if (config.move_report_history_xscale !== "log" && config.move_report_history_xscale !== "linear") {
+		config.move_report_history_xscale = exports.defaults.move_report_history_xscale;
 	}
 
 	let breadth_views = ["focus_tail", "fixed_bands", "cumulative", "rank", "summary"];

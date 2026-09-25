@@ -28,7 +28,7 @@ const colour_choices = require("./modules/colour_choices");
 const colour_gradients = require("./modules/colour_gradients");
 const stringify = require("./modules/stringify");
 const {translate, all_languages} = require("./modules/translate");
-const {cost_threshold_label} = require("./modules/utils");
+const {cost_threshold_label, candidate_count_label} = require("./modules/utils");
 
 // --------------------------------------------------------------------------------------------------------------
 
@@ -2589,13 +2589,17 @@ function menu_build() {
 
 function cost_filter_submenu() {
 
+	// Each item sets its value before the mode, so no redraw sees the new mode with the old value.
+
+	let cost_mode = config.candidate_filter === "cost";
+
 	let ret = [
 		{
 			label: translate("MENU_ALL"),
 			type: "checkbox",
-			checked: config.cost_threshold === 0,
+			checked: cost_mode && config.cost_threshold === 0,
 			click: () => {
-				win.webContents.send("set", {cost_threshold: 0});
+				win.webContents.send("set", {cost_threshold: 0, candidate_filter: "cost"});
 			}
 		},
 		{
@@ -2608,9 +2612,28 @@ function cost_filter_submenu() {
 		ret.push({
 			label,
 			type: "checkbox",
-			checked: config.cost_threshold === n,
+			checked: cost_mode && config.cost_threshold === n,
 			click: () => {
-				win.webContents.send("set", {cost_threshold: n});
+				win.webContents.send("set", {cost_threshold: n, candidate_filter: "cost"});
+			}
+		});
+	}
+
+	ret.push({
+		type: "separator"
+	});
+
+	let counts = config_io.candidate_count_options.includes(config.candidate_count)		// Keep a hand-edited N selectable.
+		? config_io.candidate_count_options
+		: [...config_io.candidate_count_options, config.candidate_count].sort((a, b) => a - b);
+
+	for (let n of counts) {
+		ret.push({
+			label: candidate_count_label(n),
+			type: "checkbox",
+			checked: !cost_mode && config.candidate_count === n,
+			click: () => {
+				win.webContents.send("set", {candidate_count: n, candidate_filter: "count"});
 			}
 		});
 	}

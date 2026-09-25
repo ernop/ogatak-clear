@@ -143,6 +143,13 @@ exports.cost_threshold_label = function(n) {
 	return `≤ ${n.toFixed(2)}`;
 };
 
+exports.candidate_count_label = function(n) {
+	if (n === 0) {
+		return "Best only";
+	}
+	return `Best + ${n} ${n === 1 ? "move" : "moves"}`;
+};
+
 // GTP vertices of moves actually present as children of this node
 // (the game's next move, plus any variations from here).
 
@@ -161,36 +168,81 @@ exports.next_move_gtp_set = function(node) {
 	return set;
 };
 
-exports.moveinfo_filter = function(node) {
+// Which moveInfos the board draws, their costs, and the cost at which the
+// candidate gradient reaches its end colour. infos[0] (the reference best move)
+// is always kept and stays first; the rest keep engine order.
+//
+// opts.mode "cost": every move within opts.threshold points (0 = All). The
+// cutoff is the gradient's scale, so an added next move past it takes the end colour.
+// opts.mode "count": the opts.count lowest-cost moves after the best (ties by
+// engine order; passes can't be drawn so they don't use up the count). Only moves
+// with at least opts.min_visits visits compete: a move's first few visits give a
+// noisy score that flashed it in and out for a report or two. With no cutoff to
+// use, the scale is the worst move shown, added next moves included, so a worse
+// played move never shares a colour with a better candidate.
 
-	if (!node.has_valid_analysis()) {
-		return [];
+exports.select_candidates = function(infos, active_is_b, next_gtp, opts) {
+
+	let best_lead = infos.length > 0 ? infos[0].scoreLead : null;
+	let costs = infos.map(info => exports.info_cost(info, best_lead, active_is_b));
+	let keep = infos.map((info, i) => i === 0);
+
+	if (opts.mode === "count") {
+		let rank_cost = (i) => costs[i] === null ? Infinity : costs[i];
+		let rest = [];
+		for (let i = 1; i < infos.length; i++) {
+			if (String(infos[i].move).toLowerCase() !== "pass" && !(infos[i].visits < opts.min_visits)) {
+				rest.push(i);
+			}
+		}
+		rest.sort((a, b) => (rank_cost(a) - rank_cost(b)) || (a - b));
+		for (let i of rest.slice(0, opts.count)) {
+			keep[i] = true;
+		}
+	} else {
+		for (let i = 1; i < infos.length; i++) {
+			keep[i] = opts.threshold === 0 || (costs[i] !== null && costs[i] <= opts.threshold + 1e-9);
+		}
 	}
 
-	let infos = node.analysis.moveInfos;
-	let best_lead = infos.length > 0 ? infos[0].scoreLead : null;
-	let active_is_b = node.get_board().active === "b";
-	let cost_cut = config.cost_threshold;
-	let next_gtp = config.always_show_next_move_eval ? exports.next_move_gtp_set(node) : null;
-	let ret = [];
+	let ret = {infos: [], costs: [], scale: 0};
 
 	for (let i = 0; i < infos.length; i++) {
-		let info = infos[i];
-		if (i === 0 || cost_cut === 0) {
-			ret.push(info);
-			continue;
-		}
-		let cost = exports.info_cost(info, best_lead, active_is_b);
-		if (cost !== null && cost <= cost_cut + 1e-9) {
-			ret.push(info);
-			continue;
-		}
-		if (next_gtp && next_gtp[info.move]) {
-			ret.push(info);
+		if (keep[i] || (next_gtp && next_gtp[infos[i].move])) {
+			ret.infos.push(infos[i]);
+			ret.costs.push(costs[i]);
 		}
 	}
 
+	ret.scale = (opts.mode !== "count" && opts.threshold > 0)
+		? opts.threshold
+		: Math.max(0.5, ...ret.costs.filter(cost => cost !== null));
+
 	return ret;
+};
+
+// Count mode always includes the game's next move(s); cost mode only when
+// always_show_next_move_eval is on.
+
+exports.board_candidates = function(node) {
+
+	if (!node.has_valid_analysis()) {
+		return {infos: [], costs: [], scale: 0.5};
+	}
+
+	let count_mode = config.candidate_filter === "count";
+	let next_gtp = (count_mode || config.always_show_next_move_eval) ? exports.next_move_gtp_set(node) : null;
+
+	return exports.select_candidates(node.analysis.moveInfos, node.get_board().active === "b", next_gtp, {
+		mode: config.candidate_filter,
+		threshold: config.cost_threshold,
+		count: config.candidate_count,
+		min_visits: config.candidate_min_visits,
+	});
+};
+
+exports.moveinfo_filter = function(node) {
+	return exports.board_candidates(node).infos;
 };
 
 exports.new_2d_array = function(width, height, defval) {

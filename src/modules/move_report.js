@@ -34,8 +34,9 @@
 const config_io = require("./config_io");
 const colour_gradients = require("./colour_gradients");
 const candidate_profile = require("./candidate_profile");
+const eval_history = require("./eval_history");
 const type_scale = require("./type_scale");
-const {info_cost, safe_html} = require("./utils");
+const {info_cost, safe_html, board_candidates} = require("./utils");
 
 const SECTION_TITLES = {
 	quality:  "MOVE QUALITY",
@@ -46,6 +47,7 @@ const SECTION_TITLES = {
 	lastmove: "LAST MOVE",
 	outcome:  "OUTCOME",
 	options:  "NEXT MOVE OPTIONS",
+	history:  "EVAL HISTORY",
 	comments: "COMMENTS",
 	tree:     "VARIATION TREE",
 };
@@ -54,6 +56,10 @@ const ALL_SECTIONS = Object.keys(SECTION_TITLES);
 const CHART_SECTIONS = ["quality", "breadth", "status", "distribution"];
 const YSCALE_SECTIONS = ["quality", "status"];
 const HTML_SECTIONS = ["turn", "lastmove", "outcome", "options"];		// Rendered via html_* methods; "comments" hosts the stock textarea instead.
+
+const HISTORY_START = 1;				// Seconds into a search before values are plotted: the first second is mostly noise.
+const HISTORY_ROWS = 12;				// Table rows (the game's next move is added if it falls outside).
+const HISTORY_CHART_HEIGHT = 1.4;		// Multiple of the shared chart height; this chart also carries a header line.
 
 const VERDICTS = [
 	// [max points lost (exclusive), label, css class (colours live in ogatak.css)]
@@ -212,6 +218,9 @@ function init() {
 		if (sec === "distribution") {
 			parts.push(`<label class="mr_metric" title='Enter "all" or an engine-ranked top N'>candidates <input id="mr_distribution_top_n" type="text" inputmode="numeric"></label>`);
 		}
+		if (sec === "history") {
+			parts.push(`<span class="mr_secctl" id="mr_xscale_ctl_history" data-sec="history" data-act="xscale" title="Toggle log / linear time axis">log</span>`);
+		}
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="up" title="Move section up">▲</span>`);
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="down" title="Move section down">▼</span>`);
 		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="hide" title="Hide section">✕</span>`);
@@ -219,6 +228,9 @@ function init() {
 		parts.push(`</div>`);
 		if (CHART_SECTIONS.includes(sec)) {
 			parts.push(`<div class="mr_seccontent"><canvas class="mr_chartcanvas" id="mr_canvas_${sec}"></canvas></div>`);
+			parts.push(`<div class="mr_width_drag" title="Drag to resize all sections"></div>`);
+		} else if (sec === "history") {
+			parts.push(`<div class="mr_seccontent"><canvas class="mr_chartcanvas" id="mr_canvas_history"></canvas><div id="mr_history_table"></div></div>`);
 			parts.push(`<div class="mr_width_drag" title="Drag to resize all sections"></div>`);
 		} else {
 			parts.push(`<div class="mr_seccontent" id="mr_seccontent_${sec}"></div>`);
@@ -253,6 +265,9 @@ function init() {
 		status_ctx: document.getElementById("mr_canvas_status").getContext("2d"),
 		distribution_canvas: document.getElementById("mr_canvas_distribution"),
 		distribution_ctx: document.getElementById("mr_canvas_distribution").getContext("2d"),
+		history_canvas: document.getElementById("mr_canvas_history"),
+		history_ctx: document.getElementById("mr_canvas_history").getContext("2d"),
+		history_table: document.getElementById("mr_history_table"),
 
 		content_cache: {},			// section name --> last html set
 		chips_cache: "",
@@ -262,6 +277,8 @@ function init() {
 		breadth_hover_depth: null,
 		status_click_map: null,
 		distribution_hover_map: null,
+		history_board_hover: null,	// GTP move under the mouse on the board, or null.
+		history_row_hover: null,	// GTP move of the Eval history row under the mouse, or null.
 
 	});
 
@@ -387,6 +404,22 @@ function init() {
 		ret.distribution_canvas.title = "";
 	});
 
+	ret.history_table.addEventListener("mouseover", (event) => {
+		let tr = event.target.closest("tr[data-gtp]");
+		let gtp = tr ? tr.dataset.gtp : null;
+		if (gtp !== ret.history_row_hover) {
+			ret.history_row_hover = gtp;
+			ret.draw_history(hub.node);
+		}
+	});
+
+	ret.history_table.addEventListener("mouseleave", () => {
+		if (ret.history_row_hover !== null) {
+			ret.history_row_hover = null;
+			ret.draw_history(hub.node);
+		}
+	});
+
 	// Canvas backing dimensions do not follow CSS layout automatically. Observe
 	// the chart containers so window resize, maximize, zoom, and flex reflow all
 	// redraw at their final widths.
@@ -399,6 +432,7 @@ function init() {
 			ret.breadth_canvas,
 			ret.status_canvas,
 			ret.distribution_canvas,
+			ret.history_canvas,
 		].map(canvas => canvas.parentElement.clientWidth);
 
 		if (widths.every((width, i) => width === ret.observed_chart_widths[i])) {
@@ -416,7 +450,7 @@ function init() {
 		});
 	});
 
-	for (let canvas of [ret.quality_canvas, ret.breadth_canvas, ret.status_canvas, ret.distribution_canvas]) {
+	for (let canvas of [ret.quality_canvas, ret.breadth_canvas, ret.status_canvas, ret.distribution_canvas, ret.history_canvas]) {
 		ret.resize_observer.observe(canvas.parentElement);
 	}
 
@@ -553,6 +587,13 @@ let move_report_prototype = {
 			return;
 		}
 
+		if (act === "xscale" && sec === "history") {
+			config.move_report_history_xscale = config.move_report_history_xscale === "log" ? "linear" : "log";
+			config_io.save();
+			this.draw(hub.node);
+			return;
+		}
+
 		let visible = this.visible_sections();
 		let i = visible.indexOf(sec);
 
@@ -624,6 +665,12 @@ let move_report_prototype = {
 			}
 		}
 
+		let xscale_control = document.getElementById("mr_xscale_ctl_history");
+		let xscale_label = config.move_report_history_xscale === "log" ? "log time" : "linear time";
+		if (xscale_control.textContent !== xscale_label) {
+			xscale_control.textContent = xscale_label;
+		}
+
 		let top_n_input = document.getElementById("mr_distribution_top_n");
 		let top_n_label = config.move_report_distribution_top_n === 0
 			? "all"
@@ -672,6 +719,17 @@ let move_report_prototype = {
 
 	value_colour: function(cost, cap) {				// cost 0 --> gradient start, cost >= cap --> end
 		return colour_gradients.colour_for_cost(config.candidate_gradient, cost, cap);
+	},
+
+	bind_row_colours: function(element) {
+
+		// ogatak.html's CSP (style-src 'self') blocks style="" attributes in
+		// generated HTML, but not CSSOM writes, so data-colour becomes
+		// --val-colour here.
+
+		for (let el of element.querySelectorAll("[data-colour]")) {
+			el.style.setProperty("--val-colour", el.dataset.colour);
+		}
 	},
 
 	candidate_costs: function(node, limit = null) {
@@ -745,10 +803,14 @@ let move_report_prototype = {
 				this.draw_status(node);
 			} else if (sec === "distribution") {
 				this.draw_distribution(node);
+			} else if (sec === "history") {
+				this.draw_history(node);
 			} else if (HTML_SECTIONS.includes(sec)) {
 				let html = this[`html_${sec}`](node);
 				if (html !== this.content_cache[sec]) {
-					document.getElementById(`mr_seccontent_${sec}`).innerHTML = html;
+					let element = document.getElementById(`mr_seccontent_${sec}`);
+					element.innerHTML = html;
+					this.bind_row_colours(element);
 					this.content_cache[sec] = html;
 				}
 			}
@@ -922,9 +984,10 @@ let move_report_prototype = {
 				let cost_str = costs[i] === null ? "" : costs[i].toFixed(2);
 
 				// Gradient colours are continuous data, so they can't be classes:
-				// the row binds --val-colour and the .mr_val rule consumes it.
+				// the row carries data-colour, bind_row_colours() turns it into
+				// --val-colour, and the .mr_val rule consumes it.
 
-				let val_bind = costs[i] === null ? "" : ` style="--val-colour: ${this.value_colour(costs[i], cap)}"`;
+				let val_bind = costs[i] === null ? "" : ` data-colour="${this.value_colour(costs[i], cap)}"`;
 
 				parts.push(
 					`<tr class="mr_cand" data-gtp="${info.move}"${val_bind}>` +
@@ -951,9 +1014,9 @@ let move_report_prototype = {
 
 	// ------------------------------------------------------------ chart shared bits
 
-	size_canvas: function(canvas) {
+	size_canvas: function(canvas, height_factor = 1) {
 		let want_width = Math.max(0, canvas.parentElement.clientWidth);
-		let want_height = config.move_report_chart_height;
+		let want_height = Math.round(config.move_report_chart_height * height_factor);
 		if (canvas.width !== want_width || canvas.height !== want_height) {
 			canvas.width = want_width;
 			canvas.height = want_height;
@@ -1978,6 +2041,430 @@ let move_report_prototype = {
 			return null;
 		}
 		return node;
+	},
+
+	// ------------------------------------------------------------ eval history
+
+	// How each candidate's value has moved during this position's search, so a
+	// long search shows which moves are still "hot" and where values settle.
+	// Values are for the player to move (higher = better for them); every label
+	// converts back to "B+" / "W+" form. The history shown belongs to the search
+	// that produced the displayed analysis, so like that analysis it never
+	// regresses to a fresher, shallower search.
+
+	hover_board_point: function(s) {
+		let gtp = null;
+		if (s && hub.node && !hub.node.destroyed) {
+			gtp = hub.node.get_board().gtp(s);
+		}
+		if (gtp === this.history_board_hover) {
+			return;
+		}
+		this.history_board_hover = gtp;
+		if (this.visible_sections().includes("history")) {
+			this.draw_history(hub.node);
+		}
+	},
+
+	history_data: function(node) {
+
+		if (!node.has_valid_analysis()) {
+			return null;
+		}
+		let search_id = node.analysis.id;
+		let search = eval_history.get(search_id);
+		if (!search || search.times.length === 0) {
+			return null;
+		}
+
+		let board = node.get_board();
+		let sign = board.active === "b" ? 1 : -1;
+		let candidates = board_candidates(node);
+		let rank = (i) => candidates.costs[i] === null ? Infinity : candidates.costs[i];
+		let order = candidates.infos.map((info, i) => i).sort((a, b) => (rank(a) - rank(b)) || (a - b));
+
+		let tags = Object.create(null);
+		node.children.forEach((child, i) => {
+			for (let key of ["B", "W"]) {
+				for (let s of child.all_values(key)) {
+					let gtp = typeof s === "string" && s.length === 2 ? board.gtp(s) : null;
+					if (gtp && !tags[gtp]) {
+						tags[gtp] = i === 0 ? "played" : "variation";
+					}
+				}
+			}
+		});
+
+		let picked = order.slice(0, HISTORY_ROWS);
+		for (let i of order.slice(HISTORY_ROWS)) {
+			if (tags[candidates.infos[i].move]) {
+				picked.push(i);
+			}
+		}
+
+		let rows = picked.map(i => {
+			let info = candidates.infos[i];
+			let now = typeof info.scoreLead === "number" ? sign * info.scoreLead : null;
+			let points = eval_history.points(search, info.move, HISTORY_START, config.candidate_min_visits)
+				.map(p => ({t: p.t, v: sign * p.lead, visits: p.visits}));
+			return {
+				move: info.move,
+				info,
+				cost: candidates.costs[i],
+				now,
+				points,
+				change: points.length > 0 && now !== null ? now - points[0].v : null,
+				tag: tags[info.move] || "",
+				colour: this.value_colour(candidates.costs[i], candidates.scale),
+			};
+		});
+
+		// Sparklines share one scale of distance from each move's current value,
+		// so a settled move is flat and a hot one visibly swings. The floor keeps
+		// tenths of a point from filling the height.
+
+		let spark_scale = 0.5;
+		for (let row of rows) {
+			for (let p of row.points) {
+				if (row.now !== null) {
+					spark_scale = Math.max(spark_scale, Math.abs(p.v - row.now));
+				}
+			}
+		}
+
+		return {
+			rows,
+			sign,
+			side: sign > 0 ? "Black" : "White",
+			t_now: search.times[search.times.length - 1],
+			root_visits: search.roots[search.roots.length - 1],
+			live: Boolean(hub.engine.desired) && hub.engine.desired.id === search_id,
+			spark_scale,
+		};
+	},
+
+	history_x_scale: function(t_now, x0, x1) {
+		let log = config.move_report_history_xscale === "log";
+		let t_hi = Math.max(10, t_now);
+		if (log) {
+			let span = Math.log(t_hi / HISTORY_START);
+			return {log, t_lo: HISTORY_START, t_hi, x_of: t => x0 + (x1 - x0) * Math.log(Math.max(t, HISTORY_START) / HISTORY_START) / span};
+		}
+		return {log, t_lo: 0, t_hi, x_of: t => x0 + (x1 - x0) * t / t_hi};
+	},
+
+	fmt_axis_score: function(lead_bpov) {			// Compact axis label: "B+2.5", "W+1", "0"
+		let abs = String(Number(Math.abs(lead_bpov).toFixed(2)));
+		if (abs === "0") return "0";
+		return lead_bpov > 0 ? `B+${abs}` : `W+${abs}`;
+	},
+
+	fmt_change: function(change) {					// For the player to move: ▲ = better now, ▼ = worse now.
+		if (change === null) return {text: "", klass: ""};
+		if (Math.abs(change) < 0.005) return {text: "0.00", klass: ""};
+		let hot = Math.abs(change) >= 1 ? " mr_hist_hot" : "";
+		return change > 0
+			? {text: `▲${change.toFixed(2)}`, klass: `mr_hist_up${hot}`}
+			: {text: `▼${(-change).toFixed(2)}`, klass: `mr_hist_down${hot}`};
+	},
+
+	draw_history: function(node) {
+		if (!node || node.destroyed) {
+			return;
+		}
+		this.size_canvas(this.history_canvas, HISTORY_CHART_HEIGHT);
+		this.history_ctx.clearRect(0, 0, this.history_canvas.width, this.history_canvas.height);
+
+		let data = this.history_data(node);
+		let focus = this.history_row_hover || this.history_board_hover;
+		this.draw_history_chart(data, focus);
+
+		let html = this.html_history(data, focus);
+		if (html !== this.content_cache.history) {
+			this.history_table.innerHTML = html;
+			this.bind_row_colours(this.history_table);
+			this.content_cache.history = html;
+		}
+	},
+
+	draw_history_chart: function(data, focus) {
+
+		let canvas = this.history_canvas;
+		let ctx = this.history_ctx;
+		let cap = type_scale.px("caption");
+		let head_h = Math.round(type_scale.px("body") * 1.6);
+		let x0 = chart_pads().left;
+		let x1 = canvas.width - Math.round(cap * 3.4);			// Room for move names at the line ends.
+		let y0 = head_h + Math.round(cap * 0.4);
+		let y1 = canvas.height - chart_pads().bottom;
+
+		if (x1 - x0 < 60 || y1 - y0 < 30) {
+			return;
+		}
+
+		ctx.fillStyle = "#181818ff";
+		ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+
+		let plotted = data ? data.rows.filter(row => row.points.length > 0) : [];
+		let focus_row = data && focus ? data.rows.find(row => row.move === focus) || null : null;
+
+		// Header line: the followed move's numbers on the left, the search on the right.
+
+		let head_y = Math.round(head_h / 2);
+		let right_edge = canvas.width - 2;
+		ctx.textBaseline = "middle";
+		if (data) {
+			ctx.font = type_scale.canvas_font("ui");
+			ctx.fillStyle = "#ffffffff";
+			ctx.textAlign = "right";
+			let search_text = `${data.live ? "" : "stopped · "}${eval_history.fmt_time(data.t_now)} · ${this.fmt_visits(data.root_visits)} visits`;
+			ctx.fillText(search_text, right_edge, head_y);
+			right_edge -= ctx.measureText(search_text).width + 16;
+		}
+
+		let pieces = [];
+		if (focus_row) {
+			let change = this.fmt_change(focus_row.change);
+			pieces.push([focus_row.move, "body", "bold", focus_row.colour]);
+			pieces.push([this.fmt_score(focus_row.info.scoreLead), "body", "bold", "#ffffffff"]);
+			if (change.text) {
+				pieces.push([`${change.text} since ${HISTORY_START}s`, "ui", "bold", change.klass.includes("up") ? "#99ff99ff" : change.klass.includes("down") ? "#ff9977ff" : "#ffffffff"]);
+			}
+			pieces.push([`${this.fmt_visits(focus_row.info.visits)} visits`, "ui", "", "#ffffffff"]);
+		} else {
+			pieces.push(["Hover a candidate on the board or a row below to follow it", "ui", "", "#ffffffff"]);
+		}
+		let hx = 2;
+		ctx.textAlign = "left";
+		for (let [text, size, weight, colour] of pieces) {
+			ctx.font = type_scale.canvas_font(size, weight);
+			let w = ctx.measureText(text).width;
+			if (hx + w > right_edge) {
+				break;
+			}
+			ctx.fillStyle = colour;
+			ctx.fillText(text, hx, head_y);
+			hx += w + Math.round(cap * 1.2);
+		}
+
+		if (!data || data.t_now < HISTORY_START || plotted.length === 0) {
+			ctx.font = type_scale.canvas_font("ui");
+			ctx.fillStyle = "#ffffffff";
+			ctx.textAlign = "left";
+			ctx.fillText(!data
+				? (hub.engine.desired ? "analysing…" : "no search of this position yet (press Space)")
+				: `values appear after ${HISTORY_START}s, once a move has ${config.candidate_min_visits} visits…`, x0 + 8, (y0 + y1) / 2);
+			return;
+		}
+
+		// Scales. The value range covers every plotted line, at least one point tall.
+
+		let xs = this.history_x_scale(data.t_now, x0, x1);
+		let v_lo = Infinity;
+		let v_hi = -Infinity;
+		for (let row of plotted) {
+			for (let p of row.points) {
+				v_lo = Math.min(v_lo, p.v);
+				v_hi = Math.max(v_hi, p.v);
+			}
+		}
+		if (v_hi - v_lo < 1) {
+			let mid = (v_hi + v_lo) / 2;
+			v_lo = mid - 0.5;
+			v_hi = mid + 0.5;
+		}
+		let pad = (v_hi - v_lo) * 0.08;
+		v_lo -= pad;
+		v_hi += pad;
+		let y_of = (v) => y1 - (y1 - y0) * (v - v_lo) / (v_hi - v_lo);
+
+		let raw_step = (v_hi - v_lo) / 4;
+		let mag = Math.pow(10, Math.floor(Math.log10(raw_step)));
+		let step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw_step);
+
+		ctx.font = type_scale.canvas_font("caption");
+		ctx.lineWidth = 1;
+		for (let i = Math.ceil(v_lo / step); i * step <= v_hi + 1e-9; i++) {
+			let v = i * step;
+			let y = Math.round(y_of(v)) + 0.5;
+			ctx.strokeStyle = i === 0 ? "#555555ff" : "#2c2c2cff";
+			ctx.beginPath();
+			ctx.moveTo(x0, y);
+			ctx.lineTo(x1, y);
+			ctx.stroke();
+			ctx.fillStyle = "#e0b872ff";
+			ctx.textAlign = "right";
+			ctx.textBaseline = "middle";
+			ctx.fillText(this.fmt_axis_score(data.sign * v), x0 - 5, y);
+		}
+
+		let ticks = eval_history.time_ticks(xs.t_lo, xs.t_hi, xs.log);
+		let last_right = -Infinity;
+		ctx.textAlign = "center";
+		ctx.textBaseline = "top";
+		for (let t of ticks) {
+			let x = Math.round(xs.x_of(t)) + 0.5;
+			ctx.strokeStyle = "#2c2c2cff";
+			ctx.beginPath();
+			ctx.moveTo(x, y0);
+			ctx.lineTo(x, y1);
+			ctx.stroke();
+			let label = eval_history.fmt_time(t);
+			let w = ctx.measureText(label).width;
+			if (x - w / 2 > last_right + 6) {
+				ctx.fillStyle = "#e0b872ff";
+				ctx.fillText(label, x, y1 + 5);
+				last_right = x + w / 2;
+			}
+		}
+
+		ctx.fillStyle = "#ffffffff";
+		ctx.textAlign = "left";
+		ctx.textBaseline = "top";
+		ctx.fillText(`↑ better for ${data.side} (to play)`, x0 + 6, y0 + 4);
+
+		stroke_position_marker(ctx, Math.round(xs.x_of(data.t_now)) + 0.5, y0, y1);
+
+		// Lines: every shown candidate in its board colour; a followed move is drawn
+		// on top, thick, with the others faded behind it.
+
+		let stroke_row = (row, width, alpha) => {
+			ctx.globalAlpha = alpha;
+			ctx.strokeStyle = row.colour;
+			ctx.fillStyle = row.colour;
+			ctx.lineWidth = width;
+			ctx.lineJoin = "round";
+			ctx.beginPath();
+			row.points.forEach((p, i) => {
+				let x = xs.x_of(p.t);
+				let y = y_of(p.v);
+				if (i === 0) {
+					ctx.moveTo(x, y);
+				} else {
+					ctx.lineTo(x, y);
+				}
+			});
+			ctx.stroke();
+			let last = row.points[row.points.length - 1];
+			ctx.beginPath();
+			ctx.arc(xs.x_of(last.t), y_of(last.v), width + 1, 0, 2 * Math.PI);
+			ctx.fill();
+			ctx.globalAlpha = 1;
+		};
+
+		for (let row of plotted) {
+			if (row !== focus_row) {
+				stroke_row(row, 2, focus_row ? 0.3 : 1);
+			}
+		}
+
+		// Move names at the line ends, skipping any that would collide.
+
+		ctx.font = type_scale.canvas_font("caption", "bold");
+		ctx.textAlign = "left";
+		ctx.textBaseline = "middle";
+		let end_labels = plotted
+			.map(row => ({row, y: y_of(row.points[row.points.length - 1].v), x: xs.x_of(row.points[row.points.length - 1].t)}))
+			.sort((a, b) => a.y - b.y);
+		let label_gap = cap + 1;
+		let taken = focus_row ? end_labels.filter(e => e.row === focus_row).map(e => e.y) : [];
+		for (let e of end_labels) {
+			if (e.row !== focus_row && taken.some(y => Math.abs(y - e.y) < label_gap)) {
+				continue;
+			}
+			if (e.row !== focus_row) {
+				taken.push(e.y);
+			}
+			ctx.globalAlpha = focus_row && e.row !== focus_row ? 0.45 : 1;
+			ctx.fillStyle = e.row.colour;
+			ctx.fillText(e.row.move, e.x + 7, e.y);
+			ctx.globalAlpha = 1;
+		}
+
+		if (focus_row && focus_row.points.length > 0) {
+
+			stroke_row(focus_row, 4, 1);
+
+			// "After 10 s it said...": the followed move's value at each time tick.
+
+			ctx.font = type_scale.canvas_font("caption", "bold");
+			ctx.textAlign = "center";
+			let points = focus_row.points;
+			let first_t = points[0].t;
+			let labels = [];
+			for (let t of [data.t_now, ...ticks.filter(t => t >= first_t && t < data.t_now)]) {		// "now" claims its place first.
+				let p = eval_history.value_at(points, t);
+				if (!p) continue;
+				let text = this.fmt_score(data.sign * p.v);
+				let w = ctx.measureText(text).width;
+				let cx = Math.min(x1 - w / 2, Math.max(x0 + w / 2, xs.x_of(t)));
+				if (labels.some(l => Math.abs(l.cx - cx) < (l.w + w) / 2 + 6)) continue;
+				labels.push({x: xs.x_of(t), y: y_of(p.v), text, w, cx});
+			}
+			for (let l of labels) {
+				ctx.fillStyle = "#ffffffff";
+				ctx.beginPath();
+				ctx.arc(l.x, l.y, 3.5, 0, 2 * Math.PI);
+				ctx.fill();
+				let above = l.y - y0 > cap * 1.6;
+				ctx.textBaseline = above ? "bottom" : "top";
+				ctx.fillText(l.text, l.cx, above ? l.y - 6 : l.y + 6);
+			}
+			ctx.font = type_scale.canvas_font("caption", "bold");
+			ctx.textAlign = "left";
+			ctx.textBaseline = "middle";
+			let end = points[points.length - 1];
+			ctx.fillStyle = focus_row.colour;
+			ctx.fillText(focus_row.move, xs.x_of(end.t) + 7, y_of(end.v));
+		}
+	},
+
+	spark_svg: function(row, data) {
+		if (row.points.length === 0 || row.now === null) {
+			return "";
+		}
+		let xs = this.history_x_scale(data.t_now, 0, 100);
+		let coords = row.points.map(p => [xs.x_of(p.t), 10 - 9 * (p.v - row.now) / data.spark_scale]);
+		if (coords.length === 1) {
+			coords.push([coords[0][0] + 1, coords[0][1]]);
+		}
+		let points = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+		return `<svg viewBox="0 0 100 20" preserveAspectRatio="none">` +
+			`<line class="mr_spark_mid" x1="0" y1="10" x2="100" y2="10"></line>` +
+			`<polyline class="mr_spark_line" points="${points}"></polyline></svg>`;
+	},
+
+	html_history: function(data, focus) {
+
+		if (!data || data.rows.length === 0) {
+			return "";
+		}
+
+		let scale_text = String(Number(data.spark_scale.toFixed(2)));
+		let parts = [];
+		parts.push(`<table class="mr_hist">`);
+		parts.push(`<tr class="mr_head"><td>move</td><td class="mr_num">now</td><td class="mr_num">worse by</td>` +
+			`<td>history vs now · ↑ better for ${data.side} · ±${scale_text} pts</td>` +
+			`<td class="mr_num">since ${HISTORY_START}s</td><td class="mr_num">visits</td></tr>`);
+
+		for (let row of data.rows) {
+			let change = this.fmt_change(row.change);
+			let focus_class = row.move === focus ? " mr_hist_focus" : "";
+			let tag = row.tag ? `<span class="mr_hist_tag">${row.tag}</span>` : "";
+			parts.push(
+				`<tr class="mr_cand${focus_class}" data-gtp="${row.move}" data-colour="${row.colour}">` +
+				`<td class="mr_coord mr_val">${row.move}${tag}</td>` +
+				`<td class="mr_num">${this.fmt_score(row.info.scoreLead)}</td>` +
+				`<td class="mr_num mr_val">${row.cost === null ? "" : row.cost.toFixed(2)}</td>` +
+				`<td class="mr_hist_spark">${this.spark_svg(row, data)}</td>` +
+				`<td class="mr_num ${change.klass}">${change.text}</td>` +
+				`<td class="mr_num">${this.fmt_visits(row.info.visits)}</td>` +
+				`</tr>`
+			);
+		}
+
+		parts.push(`</table>`);
+		return parts.join("");
 	},
 
 };

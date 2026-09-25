@@ -653,6 +653,85 @@ table.mr_cands tr.mr_cand:hover {
 	background-color: #222222ff;
 }
 
+/* Eval history card: a log-time chart canvas, then one row per shown candidate
+   with a sparkline that takes whatever width the card has. */
+
+#mr_canvas_history {
+	cursor: default;
+}
+
+table.mr_hist {
+	border-collapse: collapse;
+	color: #ffffffff;
+	margin-top: 0.4em;
+	width: 100%;
+}
+
+table.mr_hist td {
+	padding: 0.15em 1.2em 0.15em 0;
+	text-align: left;
+	white-space: nowrap;
+}
+
+table.mr_hist td:last-child {
+	padding-right: 0;
+}
+
+table.mr_hist tr.mr_head td {
+	color: #e0b872ff;
+	font-size: var(--fs-caption);
+	font-weight: bold;
+}
+
+table.mr_hist td.mr_num {
+	text-align: right;
+}
+
+table.mr_hist td.mr_hist_spark {
+	min-width: 6em;
+	width: 100%;
+}
+
+.mr_hist_spark svg {
+	display: block;
+	height: 1.3em;
+	width: 100%;
+}
+
+.mr_spark_line {
+	fill: none;
+	stroke: var(--val-colour, #ffffffff);
+	stroke-linejoin: round;
+	stroke-width: 2;
+	vector-effect: non-scaling-stroke;
+}
+
+.mr_spark_mid {
+	stroke: #555555ff;
+	stroke-width: 1;
+	vector-effect: non-scaling-stroke;
+}
+
+table.mr_hist tr.mr_cand {
+	cursor: pointer;
+}
+
+table.mr_hist tr.mr_cand:hover,
+table.mr_hist tr.mr_hist_focus {
+	background-color: #2a2a2aff;
+}
+
+.mr_hist_up   { color: #99ff99ff; }
+.mr_hist_down { color: #ff9977ff; }
+.mr_hist_hot  { font-weight: bold; }
+
+.mr_hist_tag {
+	color: #e0b872ff;
+	font-size: var(--fs-caption);
+	font-weight: bold;
+	margin-left: 0.5em;
+}
+
 #commentshandle {
 	display: none;			/* Fork change: comments live inside the Move Report panel; no drag handle. */
 }

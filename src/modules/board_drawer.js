@@ -21,7 +21,7 @@ const {translate} = require("./translate");
 
 const colour_gradients = require("./colour_gradients");
 
-const {handicap_stones, moveinfo_filter, info_cost, pad, new_2d_array, xy_to_s, float_to_hex_ff,
+const {handicap_stones, moveinfo_filter, board_candidates, pad, new_2d_array, xy_to_s, float_to_hex_ff,
 	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html} = require("./utils");
 
 // ------------------------------------------------------------------------------------------------
@@ -926,18 +926,15 @@ let board_drawer_prototype = {
 			return;
 		}
 
-		let filtered_infos = moveinfo_filter(node);
+		let candidates = board_candidates(node);
+		let filtered_infos = candidates.infos;
+		let costs = candidates.costs;
+		let gradient_cap = candidates.scale;
 		let board = node.get_board();
 		let number_types = config.numbers.split(" + ");
 		let got_bad_analysis_text = false;
 		let needs_flip = !config.black_pov && board.active === "w";		// Whether values like LCB, score etc need flipped to show from White POV.
 		let active_is_b = board.active === "b";
-		let best_lead = filtered_infos.length > 0 ? filtered_infos[0].scoreLead : null;
-		let costs = filtered_infos.map(info => info_cost(info, best_lead, active_is_b));
-		let known_costs = costs.filter(c => c !== null);
-		let gradient_cap = config.cost_threshold > 0
-			? config.cost_threshold
-			: Math.max(0.5, ...known_costs);
 		let use_classic = colour_gradients.is_classic(config.candidate_gradient);
 
 		for (let i = 0; i < filtered_infos.length; i++) {

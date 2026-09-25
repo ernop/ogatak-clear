@@ -46,9 +46,11 @@ reference.
    best to worst, never a special colour for the single top move.**
    (revised 2026-08-13) Best available = the gradient's start (default:
    top green), worst on the current scale = the end (default: dull red).
-   When **Display → Distance from best** is a cutoff, that cutoff *is*
-   the scale, so the range is known even as the user changes it. When
-   that filter is All, the scale is the worst currently shown candidate.
+   When **Display → Candidate moves shown** is a points cutoff, that
+   cutoff *is* the scale, so the range is known even as the user changes
+   it. When that filter is All or a move count, the scale is the worst
+   currently shown candidate, including an added next move, so a played
+   move that is worse than every candidate never shares their colour.
    The palette is chosen from **Display → Gradient**. Moves within ~a
    point of each other may look similar; a clearly better move must be
    visibly different. Never a set of identical-looking options when one
@@ -81,11 +83,37 @@ reference.
    The on-board colored candidate circles are stock behavior, kept — but
    the number shown on them is "Delta" (points vs the best available
    move, 0 = best), NOT visits: the visit count is irrelevant as a
-   top-level item on the highlights (2026-08-11).    On-board circles show
-   every candidate at most `cost_threshold` points worse than the best
-   move, regardless of how many engine visits it received. The current
-   threshold is 0.30. The game's next move is also shown when KataGo
-   has evaluated it (Display → Always show next-move eval, default on).
+   top-level item on the highlights (2026-08-11).
+   **Display → Candidate moves shown** chooses which circles appear. It
+   offers two kinds of cutoff in one menu; exactly one item is checked.
+   Points cutoffs never depend on how many engine visits a move
+   received; the move count's places have a small visit minimum (below).
+   - *Points from best* (`≤ 0.30` … `≤ 8.00`, or All): every candidate
+     at most that many points worse than the best move. Default 0.30.
+     The game's next move is also shown when KataGo has evaluated it
+     (Display → Always show next-move eval, default on).
+   - *Move count* (`Best only`, `Best + 1 move` … `Best + 10 moves`;
+     N defaults to 4) (2026-09-25): always (1) the game's actual next
+     move — and any variation from this node — when KataGo has evaluated
+     it, (2) the engine's best move, and (3) the N lowest-cost other
+     moves among those with at least `candidate_min_visits` visits
+     (default 50). A move already in (2) or (3) is drawn once. Fewer
+     than N appear when fewer moves qualify — early in a search or in
+     forced positions. (1) and (2) are shown however few visits they
+     have. The next move is included regardless of the Always-show
+     toggle, which governs only points cutoffs. Rationale: a points
+     cutoff shows a crowd of near-equal circles in quiet positions (19 at
+     ≤ 0.50 in the opening that prompted this) and only one in sharp
+     ones; a count always gives the same number of alternatives beside
+     the move actually played.
+     Visit minimum (2026-09-25, measured): a move's first few visits give
+     a noisy score, often level with the best, so newly explored moves
+     flashed into the N places for one report (~0.1 s) and vanished.
+     Over 32 positions of Lee–AlphaGo game 4 at Best + 5, 346 of 566
+     appearances vanished within a second, the median arriving on 1
+     visit. A minimum of 50 left 42 (30 left 71; 100 left 29). Also
+     admitting any move considered for 1 s was rejected: it re-admitted
+     still-noisy moves and left 112.
 6. **Quality of moves** — (respecified 2026-08-11: this is NOT a
    line graph) a bar chart, one bar per move, on a FIXED axis: up always
    means "White gained points", down always means "Black gained points" —
@@ -160,6 +188,41 @@ reference.
    the score-ranked top 50 candidate costs in `OGWC`. These values belong
    only to Choice Breadth History; Move Quality remains a single-purpose
    chart with no Width or candidate overlays.
+12. **Eval history** (2026-09-25) — how each candidate's value moved during
+   this position's search, so a long search shows which moves are still
+   "hot" and whether values are settling. A card (section `history`) with a
+   chart above a table; both follow the moves drawn on the board (same set as
+   the circles, in cost order, up to 12 rows; the game's next move is added
+   if it falls outside).
+   - Values are each move's own score for the player to move: up is better
+     for them. Every label is in "B+" / "W+" form, and the chart states the
+     orientation ("↑ better for White (to play)").
+   - Time is seconds since the search started, log by default
+     (`move_report_history_xscale`: `"log"` / `"linear"`, toggled in the
+     card header), plotted from 1 s because the first second is mostly
+     noise. A move's line starts once it has `candidate_min_visits` visits
+     (default 50), for the same reason.
+   - Chart: every row's line in its board colour; the yellow line is now.
+     Hovering a candidate on the board or a table row follows that move: its
+     line is drawn thick on top with the rest faded, its value is labelled at
+     each time tick ("after 10 s it said…"), and its move, value now, change
+     since 1 s, and visits lead the card in large type.
+   - Table: move (tagged "played" or "variation" when it is in the game
+     record), value now, worse-by (as on the board), a sparkline, the change
+     since 1 s (▲ better / ▼ worse for the player to move; bold at 1 point
+     or more), and visits. Sparklines plot each move's distance from its
+     current value on one scale shared by all rows, so settled moves are flat
+     and hot ones swing; the scale is at least ±0.5 points and is stated in
+     the header. Clicking a row plays the move.
+   - Each KataGo report is recorded under its query id, so every search of a
+     position has its own history. The card shows the search that produced
+     the displayed analysis, so like that analysis it never regresses to a
+     fresher, shallower search; the header shows its elapsed time and visits,
+     prefixed "stopped" once it is no longer running. Every report is kept
+     for the first few seconds, then samples at least 4% of the elapsed time
+     apart, so an hour-long search keeps a few hundred; the newest sample is
+     always the latest report. The 40 most recently used searches stay in
+     memory; histories are not saved to SGF.
 
 ### Current-line semantics
 
@@ -242,8 +305,8 @@ Requirements now:
    now sets the textarea's own height instead of carving a grid row out
    of the panel's space.
 4. **Named sections, each with its own controls** — `quality`, `breadth`,
-   `status`, `distribution`, `turn`, `lastmove`, `outcome`, `options`, `comments`,
-   `tree` — header buttons: move up (▲), move down (▼), hide (✕). Hidden
+   `status`, `distribution`, `turn`, `lastmove`, `outcome`, `options`, `history`,
+   `comments`, `tree` — header buttons: move up (▲), move down (▼), hide (✕). Hidden
    sections appear as "+ name" chips in the controls bar, click to restore.
    The variation tree is default-hidden; see `PRODUCT-workspace.md`.
 5. **Layout sizes are adjustable live from the panel itself**: a dim
@@ -259,13 +322,17 @@ Requirements now:
 6. **Every adjustment persists immediately** to Ogatak's `config.json`:
    `move_report_width`, `move_report_chart_height`,
    `move_report_sections` (an ordered array of the visible sections).
-   The on-board candidate filter persists as `cost_threshold` (points worse
-   than the best available move; current/default 0.30; 0 = All). Candidate
-   visibility never depends on visits. When **Display → Always show
-   next-move eval** is on (default), the game's next move — and any
-   variation from this node — is also drawn if KataGo reported it, even
-   when it is worse than the cutoff. The palette persists as
-   `candidate_gradient`.
+   The on-board candidate filter persists as `candidate_filter` (`"cost"`
+   or `"count"`), `cost_threshold` (points worse than the best available
+   move; default 0.30; 0 = All), and `candidate_count` (moves beyond the
+   best in count mode; default 4; a hand-edited N is added to the menu),
+   and `candidate_min_visits` (count mode's visit minimum; default 50;
+   0 = none; config.json only). Points cutoffs never depend on visits.
+   With a points cutoff and
+   **Display → Always show next-move eval** on (default), the game's next
+   move — and any variation from this node — is also drawn if KataGo
+   reported it, even when it is worse than the cutoff; count mode always
+   draws it. The palette persists as `candidate_gradient`.
    Editing `config.json` by hand is an equally supported path — the array
    IS the template: reorder it, delete from it, and that's the layout.
 7. **All text sizes come from the app's six-step type scale** (hero /
@@ -290,6 +357,9 @@ startup, so the stock comment drawer and input handlers are untouched.
   permanent claim on the panel's space.
 - The **visit-percentage candidate filter**: low-visit moves can be strong
   options, so candidate visibility depends only on points worse than best.
+  Count mode's small fixed visit minimum is not a return of that filter:
+  it only stops a move's first noisy visits from claiming one of the N
+  places, and never hides the best or the played move.
 
 The **variation tree** is not removed. It is a hideable pane (section id
 `tree`), default hidden, restored from the Move Report chip list. See
@@ -308,12 +378,18 @@ The **variation tree** is not removed. It is a hideable pane (section id
   "best was <point>" detail needs the parent's full analysis in memory.
 - The mover's best alternative = parent's `moveInfos[0]`. Distance is
   Chebyshev (max of dx, dy), reported as "lines".
-- On-board candidate circles are filtered only by `cost_threshold`. The
-  engine's first-ranked move is always shown. Every other move with a
-  comparable score at or below the threshold appears, including
-  symmetry-equivalent moves and candidates with few visits.
-  `cost_threshold` is points worse than `moveInfos[0]`, from the side to
-  play, matching the panel's costs column. If
-  `always_show_next_move_eval` is on, any child-node move KataGo
-  evaluated is included as well, so a played blunder still shows its
-  Delta even when it is past the cutoff.
+- On-board candidate circles are selected only by score cost
+  (`utils.select_candidates`, tested in `src/modules/utils.test.js`).
+  The engine's first-ranked move, `moveInfos[0]`, is always shown and is
+  the cost reference: cost is points worse than it, from the side to
+  play, clamped at 0, matching the panel's costs column. With a points
+  cutoff, every other move with a comparable score at or below
+  `cost_threshold` appears, including symmetry-equivalent moves and
+  candidates with few visits. In count mode the `candidate_count`
+  lowest-cost other moves with at least `candidate_min_visits` visits
+  appear; ties (including every move clamped to
+  0) keep engine order, moves without a scoreLead rank last, and passes
+  are skipped because they cannot be drawn. Child-node moves KataGo
+  evaluated are added — always in count mode, and with a points cutoff
+  when `always_show_next_move_eval` is on — so a played blunder still
+  shows its Delta.

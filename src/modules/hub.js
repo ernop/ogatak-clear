@@ -16,6 +16,7 @@ const toast = require("./toast");
 const new_load_results = require("./loader_results");
 const make_perf_report = require("./performance");
 const root_fixes = require("./root_fixes");
+const eval_history = require("./eval_history");
 const {save_sgf, save_sgf_multi, tree_string} = require("./save_sgf");
 const {fast_maxvisits, new_query} = require("./query");
 
@@ -701,6 +702,8 @@ let hub_main_props = {
 			return;
 		}
 
+		eval_history.record(o, performance.now());
+
 		let initial_draw_count = board_drawer.draw_count;
 		let relevant_node_id = node_id_from_search_id(o.id);
 		let policy_or_drunk = config.play_against_policy || config.play_against_drunk;					// Are either of these options set?
@@ -1330,6 +1333,7 @@ let hub_main_props = {
 	mouse_entering_point: function(s) {									// Called when mouse has entered some point e.g. "jj" or sometimes null
 
 		this.mouseover_time = performance.now();
+		move_report.hover_board_point(s);
 
 		if (config.mouseover_delay <= 0) {
 
