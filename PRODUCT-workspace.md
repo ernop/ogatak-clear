@@ -112,6 +112,20 @@ The strip above the board is not a fixed 12-span table. It is:
 
 - The info bar must not widen the board column. It wraps inside the
   width the board already owns.
+- **Changing values never re-wrap the bar** (2026-09-26). Each value sits
+  in a fixed-width slot (`pad()` widths, spaces kept by `white-space:
+  pre`). The slots are Score 8, Visits wide enough for "limit / limit" at
+  the current visit limits, Show 15, Captures 10, Komi 5, Rules 14. So an
+  unanalysed position's empty Score and Visits take the same room as
+  filled ones, and so do growing visit counts.
+  - Why: the board's square size is derived from the height below the
+    bar (see "Systems that fight these rules"). Every re-wrap therefore
+    moved and resized the board and shifted the right-hand column.
+  - The measured failure: each board click made the board jump up,
+    grow, jump down, and shrink back within about 60 ms.
+  - The bar's line count now changes only when the user changes
+    something: which items are shown, a visit limit, zoom, or text
+    size.
 - Engine-error and editing messages still replace the bar when active.
 
 ## Panes (board, analysis, tree, comments, …)

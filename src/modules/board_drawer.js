@@ -1176,7 +1176,7 @@ let board_drawer_prototype = {
 					}
 				}
 				return `<span class="info_item boardinfo_numbers"><span class="info_label">${t.Show}:</span> ` +
-					`<span class="info_value">${numbers_string}</span>${hide("show")}</span>`;
+					`<span class="info_value">${pad(numbers_string, 15)}</span>${hide("show")}</span>`;		// 15: "(not pondering)"
 			},
 			toplay: () => {
 				let active = (board.active === "b")
@@ -1210,15 +1210,16 @@ let board_drawer_prototype = {
 					}
 				}
 				return `<span class="info_item"><span class="info_label">${t.Score}:</span> ` +
-					`<span class="info_value">${pad(score, 7)}</span>${hide("score")}</span>`;
+					`<span class="info_value">${pad(score, 8)}</span>${hide("score")}</span>`;		// 8: "B+100.00"
 			},
 			visits: () => {
 				let visits = "";
 				if (node.has_valid_analysis()) {
 					visits = `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[0].visits} / ${node.analysis.rootInfo.visits}`;
 				}
+				let digits = String(Math.max(config.ponder_visits, config.autoanalysis_visits)).length;		// Room for "limit / limit".
 				return `<span class="info_item"><span class="info_label">${t.Visits}:</span> ` +
-					`<span class="info_value">${pad(visits, 13)}</span>${hide("visits")}</span>`;
+					`<span class="info_value">${pad(visits, 2 * digits + 3)}</span>${hide("visits")}</span>`;
 			},
 		};
 

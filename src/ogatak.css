@@ -194,6 +194,7 @@ body {
 
 .info_value {
 	color: #ffffffff;
+	white-space: pre;			/* Keeps pad()'s spaces: a fixed-width slot, so the bar never re-wraps (moving the board) as values change. */
 }
 
 .info_hide {
