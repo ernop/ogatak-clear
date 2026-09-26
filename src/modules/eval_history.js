@@ -7,6 +7,8 @@
 // the elapsed time after the one before, so an hour-long search keeps only a
 // few hundred. The newest sample always holds the latest report.
 
+exports.START_VISITS = 1000;	// Search visits before anything is plotted: the first second or so is mostly noise.
+
 const MAX_SEARCHES = 40;
 const MIN_GAP = 0.05;			// Seconds: under the default 0.1 s report interval, so jitter never drops early reports.
 const LOG_GAP = 0.04;			// Fraction of the elapsed time.
@@ -33,7 +35,7 @@ exports.record = function(o, now_ms) {
 
 	let search = searches.get(o.id);
 	if (!search) {
-		search = {t0: now_ms, times: [], roots: [], moves: new Map()};
+		search = {t0: now_ms, times: [], roots: [], moves: new Map(), shown: new Set()};
 	}
 	touch(o.id, search);
 
@@ -76,30 +78,42 @@ exports.get = function(id) {
 	return search;
 };
 
-// A move's samples from min_t seconds on, once it has at least min_visits visits
-// (a move's first few visits give a noisy score). Scores stay Black-POV.
+// Moves drawn as candidates at any point since the chart started (START_VISITS);
+// the chart keeps their lines. Earlier board membership is just exploration order.
 
-exports.points = function(search, move, min_t, min_visits) {
+exports.note_shown = function(id, moves, root_visits) {
+	let search = searches.get(id);
+	if (search && root_visits >= exports.START_VISITS) {
+		for (let move of moves) {
+			search.shown.add(move);
+		}
+	}
+};
+
+// A move's samples once the search has min_root visits and the move itself has
+// min_visits (a move's first few visits give a noisy score). Scores stay Black-POV.
+
+exports.points = function(search, move, min_root, min_visits) {
 	let m = search.moves.get(move);
 	let ret = [];
 	if (!m) {
 		return ret;
 	}
 	for (let j = 0; j < m.k.length; j++) {
-		let t = search.times[m.k[j]];
-		if (t >= min_t && !(m.visits[j] < min_visits)) {
-			ret.push({t, lead: m.lead[j], visits: m.visits[j]});
+		let root = search.roots[m.k[j]];
+		if (root >= min_root && !(m.visits[j] < min_visits)) {
+			ret.push({t: search.times[m.k[j]], root, lead: m.lead[j], visits: m.visits[j]});
 		}
 	}
 	return ret;
 };
 
-// What the engine said at time t: the last sample at or before it.
+// What the engine said at x (in whatever units the points' x use): the last sample at or before it.
 
-exports.value_at = function(points, t) {
+exports.value_at = function(points, x) {
 	let ret = null;
 	for (let p of points) {
-		if (p.t > t + 1e-9) {
+		if (p.x > x + 1e-9) {
 			break;
 		}
 		ret = p;
@@ -107,19 +121,89 @@ exports.value_at = function(points, t) {
 	return ret;
 };
 
-const LOG_TICKS = [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000];
-const LINEAR_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
-
-exports.time_ticks = function(t_lo, t_hi, log) {
-	if (log) {
-		return LOG_TICKS.filter(t => t >= t_lo - 1e-9 && t <= t_hi + 1e-9);
-	}
-	let step = LINEAR_STEPS.find(s => t_hi / s <= 6) || LINEAR_STEPS[LINEAR_STEPS.length - 1];
+exports.visit_ticks = function(lo, hi, log) {
 	let ret = [];
-	for (let t = Math.ceil(t_lo / step) * step; t <= t_hi + 1e-9; t += step) {
-		ret.push(t);
+	if (log) {
+		for (let decade = 1; decade <= hi; decade *= 10) {
+			for (let m of [1, 2, 5]) {
+				let n = decade * m;
+				if (n >= lo && n <= hi) {
+					ret.push(n);
+				}
+			}
+		}
+		return ret;
+	}
+	let steps = [];
+	for (let decade = 1; decade <= hi; decade *= 10) {
+		steps.push(decade, decade * 2, decade * 5);
+	}
+	let step = steps.find(s => hi / s <= 6) || Math.max(1, hi);
+	for (let n = Math.ceil(lo / step) * step; n <= hi; n += step) {
+		ret.push(n);
 	}
 	return ret;
+};
+
+exports.fmt_count = function(n) {						// 1500 --> "1.5k", 20000 --> "20k", 2000000 --> "2M"
+	let trim = (x) => String(Number(x.toFixed(1)));
+	if (n >= 1e6) return `${trim(n / 1e6)}M`;
+	if (n >= 1e3) return `${trim(n / 1e3)}k`;
+	return String(Math.round(n));
+};
+
+// Chooses a place for every line's label, in priority order: just right of the
+// line's end if free; else on the line itself, as far right as there is room;
+// else beside the end, shifted up or down to the nearest free spot (drawn with a
+// leader). Never leaves a line unlabelled. Lines are {w, h, px: [], py: []} in
+// canvas coordinates; obstacles and area are {x0, y0, x1, y1}.
+
+exports.place_line_labels = function(lines, obstacles, area) {
+
+	let taken = obstacles.slice();
+	let fits = (r) => r.x0 >= area.x0 && r.x1 <= area.x1 && r.y0 >= area.y0 && r.y1 <= area.y1 &&
+		!taken.some(t => r.x0 < t.x1 && t.x0 < r.x1 && r.y0 < t.y1 && t.y0 < r.y1);
+
+	return lines.map(line => {
+
+		let n = line.px.length;
+		let ex = line.px[n - 1];
+		let ey = line.py[n - 1];
+		let box = (x, y) => ({x0: x - line.w / 2, y0: y - line.h / 2, x1: x + line.w / 2, y1: y + line.h / 2});
+		let take = (x, y, kind) => {
+			taken.push(box(x, y));
+			return {x, y, kind};
+		};
+		let end_x = ex + 6 + line.w / 2;
+
+		if (fits(box(end_x, ey))) {
+			return take(end_x, ey, "end");
+		}
+
+		let j = n - 1;
+		for (let x = ex - line.w / 2 - 2; n > 1 && x >= line.px[0] + line.w / 2; x -= 3) {
+			while (j > 0 && line.px[j - 1] > x) {
+				j--;
+			}
+			let i = Math.max(0, j - 1);
+			let span = line.px[j] - line.px[i];
+			let y = span > 0 ? line.py[i] + (line.py[j] - line.py[i]) * (x - line.px[i]) / span : line.py[j];
+			if (fits(box(x, y))) {
+				return take(x, y, "on");
+			}
+		}
+
+		for (let step = 1; step * line.h / 2 <= area.y1 - area.y0; step++) {
+			for (let dir of [-1, 1]) {
+				let y = ey + dir * step * line.h / 2;
+				if (fits(box(end_x, y))) {
+					return take(end_x, y, "leader");
+				}
+			}
+		}
+
+		return take(end_x, ey, "end");
+	});
 };
 
 exports.fmt_time = function(t) {

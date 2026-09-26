@@ -11,12 +11,11 @@ Ogatak. The detailed requirements and rationale are in
 
 ![ogatak-clear before Lee Sedol's move 78 against AlphaGo, showing Best + 5 candidates and Eval history](docs/screenshots/count-mode-eval-history-move-78.png)
 
-_Lee Sedol–AlphaGo Game 4, just before Lee's move 78, after a 2½-minute
+_Lee Sedol–AlphaGo Game 4, just before Lee's move 78, after a three-minute
 search. The board shows the engine's best move (`0`), the five closest
 alternatives, and the move Lee actually played (L11, red). Eval history, on
-the right, plots each of those moves' values over the whole search on a
-log-time axis; the table under it gives every move a sparkline and its change
-since the first second. See the
+the right, plots the value of every move shown during the search against the
+search's visits; moves that have since left the board are dashed. See the
 [source and analysis details](docs/sample-games/README.md)._
 
 * Fork of an analysis GUI for [KataGo](https://github.com/lightvector/KataGo).
@@ -27,9 +26,9 @@ since the first second. See the
 
 * **Best + N candidates**: show a fixed number of options, always including
   the move actually played, instead of every move within a points cutoff.
-* **Eval history**: every candidate's value over the whole search, with
-  sparklines and a chart that follows whichever move you hover, so you can
-  see which moves are still moving and where the values settle.
+* **Eval history**: every candidate's value over the whole search, charted
+  against visits, with a label on every line and a hover that follows any
+  move, so you can see which moves are still moving and where values settle.
 * **No flicker**: moves KataGo has only just started exploring no longer
   flash into the Best + N places for a tenth of a second.
 * **Candidate colours restored in Next Move Options**: the page's security
@@ -62,42 +61,43 @@ since the first second. See the
 
 _Hovering L11 shows its principal variation on the board and follows it in
 Eval history: its line is drawn on top and labelled with what KataGo said
-about it at each time tick, and the header gives its value now, its change
-since the first second, and its visits._
+about it at each visits tick, and the header gives its value now, its change
+since 1k visits, and its own visits._
 
-* A Move Report card that records how every candidate's value moves during
-  the current position's search, from the first second to however long you
+* A Move Report card charting how every candidate's value moves as the
+  current position's search goes on, from 1,000 visits to however long you
   let KataGo think.
-* The chart plots each shown candidate's score for the player to move (up is
-  better for them, and says so) in its board colour against time since the
-  search started. Time is logarithmic by default, so both the early swings
-  and the long settling stay visible; the card header toggles linear time.
-* Hover a candidate on the board, or a row in the table, to follow that
-  move: its line is drawn thick with the others faded, its value is labelled
-  at 1 s, 2 s, 5 s, 10 s, 20 s, 1 min, and so on, and its current value,
-  change, and visits lead the card in large type.
-* The table lists the same moves with value now, points worse than best, a
-  sparkline, the change since 1 s (▲ better / ▼ worse for the player to move;
-  bold from 1 point), and visits. Sparklines share one scale of distance from
-  each move's current value, so settled moves are flat and "hot" moves
-  visibly swing. Click a row to play the move.
-* Lines start at 1 s and once a move has 50 visits, because earlier values
-  are mostly noise. Each search keeps its own history, a few hundred samples
-  even for an hour-long search. Revisiting a position keeps showing the
-  earlier, longer search until the new one overtakes it, just like the
-  analysis itself.
+* The x axis is the search's total visits, logarithmic by default so both the
+  early swings and the long settling stay visible (the card header toggles
+  linear). Visits rather than time, because visits are the search's real
+  progress; time depends on the machine and on whatever else uses the GPU.
+* The y axis is each move's score for the player to move: up is better for
+  them, and the chart says so. Each line has its move's board colour.
+* Every move shown on the board during the search keeps its line after it
+  drops out of the Best + N places; those lines turn thin and dashed. Every
+  line is labelled with its move: at its end where there is room, otherwise
+  on the line itself.
+* Hover a candidate on the board to follow it: its line is drawn thick with
+  the others faded, its value is labelled at 2k, 5k, 10k visits and so on,
+  and its value now, change, and visits lead the card in large type.
+* A move's line starts once it has 50 visits, because earlier values are
+  mostly noise. Each search keeps its own history, a few hundred samples even
+  for an hour-long search. Revisiting a position keeps showing the earlier,
+  longer search until the new one overtakes it, just like the analysis
+  itself.
 
-![The Eval history card while following a row](docs/screenshots/eval-history-card.png)
+![The Eval history card following a move that has left the board](docs/screenshots/eval-history-card.png)
 
-_Following Q9, the most-changed move in the table (bold ▲1.02). Its line
-starts after about six seconds, once it had 50 visits, and KataGo's value for
-it then improved by about a point for White over the next three minutes._
+_Following E8 after it has left the board. KataGo's value for it improved by
+half a point for White from 1k visits to 377k, but other moves improved more,
+so it lost its Best + 5 place; its line stays, dashed, like every other move
+that was once shown._
 
 ## The Move Report panel
 
 * A full-height, resizable panel of reorderable, hideable cards: turn,
-  last-move verdict, before/after outcome, clickable next-move options, Eval
-  history, comments, and the analysis charts below. When an SGF includes
+  last-move verdict, before/after outcome, clickable next-move options, the
+  Eval history chart, comments, and the history charts below. When an SGF includes
   player names, a persistent strip prominently identifies Black and White,
   their ranks, the active player, and available game context.
 * Point values are labelled with the colour they favour (`B+2.30`, `W+0.50`),

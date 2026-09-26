@@ -188,41 +188,54 @@ reference.
    the score-ranked top 50 candidate costs in `OGWC`. These values belong
    only to Choice Breadth History; Move Quality remains a single-purpose
    chart with no Width or candidate overlays.
-12. **Eval history** (2026-09-25) — how each candidate's value moved during
-   this position's search, so a long search shows which moves are still
-   "hot" and whether values are settling. A card (section `history`) with a
-   chart above a table; both follow the moves drawn on the board (same set as
-   the circles, in cost order, up to 12 rows; the game's next move is added
-   if it falls outside).
-   - Values are each move's own score for the player to move: up is better
-     for them. Every label is in "B+" / "W+" form, and the chart states the
-     orientation ("↑ better for White (to play)").
-   - Time is seconds since the search started, log by default
+12. **Eval history** (2026-09-25, revised 2026-09-26) — how each candidate's
+   value moved during this position's search, so a long search shows which
+   moves are still "hot" and whether values are settling. A card (section
+   `history`) holding one chart.
+   - x is the search's total visits, log by default
      (`move_report_history_xscale`: `"log"` / `"linear"`, toggled in the
-     card header), plotted from 1 s because the first second is mostly
-     noise. A move's line starts once it has `candidate_min_visits` visits
-     (default 50), for the same reason.
-   - Chart: every row's line in its board colour; the yellow line is now.
-     Hovering a candidate on the board or a table row follows that move: its
-     line is drawn thick on top with the rest faded, its value is labelled at
-     each time tick ("after 10 s it said…"), and its move, value now, change
-     since 1 s, and visits lead the card in large type.
-   - Table: move (tagged "played" or "variation" when it is in the game
-     record), value now, worse-by (as on the board), a sparkline, the change
-     since 1 s (▲ better / ▼ worse for the player to move; bold at 1 point
-     or more), and visits. Sparklines plot each move's distance from its
-     current value on one scale shared by all rows, so settled moves are flat
-     and hot ones swing; the scale is at least ±0.5 points and is stated in
-     the header. Clicking a row plays the move.
+     card header), from 1,000 visits because the first second or so is
+     mostly noise. Visits rather than time (2026-09-26): visits measure the
+     search's actual progress, while time depends on the machine and on
+     whatever else shares the GPU (the same kind of search ran at 666 and
+     1,481 visits/s in two measurement runs). The header still shows elapsed
+     time next to the visits.
+   - y is each move's own score for the player to move: up is better for
+     them. Every label is in "B+" / "W+" form, and the chart states the
+     orientation ("↑ better for White (to play)").
+   - Lines: every move drawn on the board at any point since the chart
+     started keeps its line for the rest of the search (2026-09-26), drawn
+     dashed once it has left the board, with a legend saying so. Board
+     membership before 1,000 visits does not count: it only reflects which
+     moves KataGo tried first. A move's line starts once it has
+     `candidate_min_visits` visits (default 50). Lines use the board's
+     gradient colours. At most 24 lines, on-board moves first, then by
+     points worse than best; the followed move and the game's next move are
+     always drawn.
+   - Labels: every line is named (2026-09-26). A label sits just right of its
+     line's end when there is room; otherwise on the line itself, as far
+     right as there is room, on a dark backing; otherwise beside the end,
+     moved to the nearest free spot with a leader line. Label text is the
+     line's colour lifted toward white so it stays legible.
+   - Hovering a candidate on the board follows that move: its line is drawn
+     thick on top with the rest faded, its value is labelled at each visits
+     tick ("after 10k visits it said…"), and the header gives the move (with
+     a "played" / "variation" tag when it is in the game record), its value
+     now, its change since the chart started (▲ better / ▼ worse for the
+     player to move), and its visits, noting when it is no longer on the
+     board.
+   - The table of moves under the chart (value now, worse-by, sparkline,
+     change, visits) was removed on 2026-09-26: the chart carries every line,
+     and hovering gives exact numbers.
    - Each KataGo report is recorded under its query id, so every search of a
      position has its own history. The card shows the search that produced
      the displayed analysis, so like that analysis it never regresses to a
-     fresher, shallower search; the header shows its elapsed time and visits,
-     prefixed "stopped" once it is no longer running. Every report is kept
-     for the first few seconds, then samples at least 4% of the elapsed time
-     apart, so an hour-long search keeps a few hundred; the newest sample is
-     always the latest report. The 40 most recently used searches stay in
-     memory; histories are not saved to SGF.
+     fresher, shallower search; the header shows its visits and elapsed
+     time, prefixed "stopped" once it is no longer running. Every report is
+     kept for the first few seconds, then samples at least 4% of the elapsed
+     time apart, so an hour-long search keeps a few hundred; the newest
+     sample is always the latest report. The 40 most recently used searches
+     stay in memory; histories are not saved to SGF.
 
 ### Current-line semantics
 

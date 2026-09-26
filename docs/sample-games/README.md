@@ -25,5 +25,6 @@ Current Candidate Values and Eval history still require live analysis after
 reopening the file.
 
 The three move-78 screenshots (the position just before Lee Sedol's move 78)
-were taken from one live search of about three minutes, 270,000–300,000
-visits, with **Display → Candidate moves shown** set to `Best + 5 moves`.
+were taken from one live search of about three and a half minutes,
+366,000–377,000 visits, with **Display → Candidate moves shown** set to
+`Best + 5 moves`.

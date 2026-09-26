@@ -20,6 +20,7 @@ const gridlines = require("./gridlines");
 const {translate} = require("./translate");
 
 const colour_gradients = require("./colour_gradients");
+const eval_history = require("./eval_history");
 
 const {handicap_stones, moveinfo_filter, board_candidates, pad, new_2d_array, xy_to_s, float_to_hex_ff,
 	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html} = require("./utils");
@@ -930,6 +931,10 @@ let board_drawer_prototype = {
 		let filtered_infos = candidates.infos;
 		let costs = candidates.costs;
 		let gradient_cap = candidates.scale;
+
+		if (filtered_infos.length > 0) {
+			eval_history.note_shown(node.analysis.id, filtered_infos.map(info => info.move), node.analysis.rootInfo.visits);
+		}
 		let board = node.get_board();
 		let number_types = config.numbers.split(" + ");
 		let got_bad_analysis_text = false;
