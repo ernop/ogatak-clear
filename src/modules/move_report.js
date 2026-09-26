@@ -194,6 +194,7 @@ function init() {
 
 	parts.push(`<div id="mr_game_identity"></div>`);
 	parts.push(`<div id="mr_controls">`);
+	parts.push(`<span class="mr_settings_ctl" title="Every setting in one place (Ctrl+,)">⚙ settings</span>`);
 	parts.push(`<span class="mr_ctlgroup">width <span class="mr_ctl" data-act="width_down">–</span><span class="mr_ctl" data-act="width_up">+</span></span>`);
 	parts.push(`<span class="mr_ctlgroup">chart <span class="mr_ctl" data-act="chart_down">–</span><span class="mr_ctl" data-act="chart_up">+</span></span>`);
 	parts.push(`<label class="mr_metric">breadth <select id="mr_breadth_view">`);
@@ -281,6 +282,12 @@ function init() {
 	});
 
 	outer.addEventListener("mousedown", (event) => {
+
+		if (event.target.closest(".mr_settings_ctl")) {
+			event.preventDefault();
+			hub.toggle_settings();
+			return;
+		}
 
 		let width_drag = event.target.closest(".mr_width_drag");
 		if (width_drag) {

@@ -158,7 +158,7 @@ exports.defaults = {
 	"guess_ruleset": false,
 	"stone_counts": false,
 	"autoanalysis_visits": 500,
-	"ponder_visits": 1000000,					// Normal Space-key analysis limit; adjustable under Analysis.
+	"ponder_visits": 1000000,					// Normal Space-key analysis limit; typed in Settings, or presets under Analysis.
 	"default_rules": "Chinese",					// Used for game on startup, as well as when rules are "" (unknown).
 	"default_komi": 7.5,						// Used for game on startup, but otherwise unknown komi is inferred as zero.
 
@@ -357,6 +357,12 @@ function apply_fixes() {
 
 	if (!Number.isInteger(config.candidate_min_visits) || config.candidate_min_visits < 0) {
 		config.candidate_min_visits = exports.defaults.candidate_min_visits;
+	}
+
+	for (let key of ["ponder_visits", "autoanalysis_visits"]) {			// query.js needs an integer >= 2.
+		if (!Number.isInteger(config[key]) || config[key] < 2) {
+			config[key] = exports.defaults[key];
+		}
 	}
 
 	if (typeof config.always_show_next_move_eval !== "boolean") {

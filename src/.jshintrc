@@ -12,7 +12,9 @@
 		"fullbox": true,
 		"grapher": true,
 		"hub": true,
+		"move_report": true,
 		"root_editor": true,
+		"settings_pane": true,
 		"stderrbox": true,
 		"tabber": true,
 		"tree_drawer": true

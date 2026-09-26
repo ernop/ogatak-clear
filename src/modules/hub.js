@@ -1001,8 +1001,13 @@ let hub_main_props = {
 		stderrbox.show();
 	},
 
+	toggle_settings: function() {
+		settings_pane.toggle();
+	},
+
 	escape: function() {
 		this.disable_specials_except();
+		settings_pane.hide();					// Not in disable_specials_except(): go() calls that, and settings changes call go().
 		if (config.editing !== "") {
 			this.set("editing", "");
 		}

@@ -294,6 +294,9 @@ window.addEventListener("keydown", (event) => {
 	} else if (command_modifier && event.shiftKey && !event.altKey && event.code === "Digit0") {
 		event.preventDefault();
 		hub.zoom_reset();
+	} else if (command_modifier && !event.altKey && event.code === "Comma") {
+		event.preventDefault();
+		hub.toggle_settings();
 	} else if (event.code === "PageUp") {
 		event.preventDefault();
 		hub.input_up_down(-10);
@@ -359,6 +362,29 @@ root_editor.inner_div.addEventListener("keydown", (event) => {
 		event.stopPropagation();
 	}
 });
+
+// Keys typed into the fork's own form controls (the Settings pane, the Move Report's header fields) work those
+// controls instead of the board. Stopped here, they still can't trigger menu accelerators: main.js ignores keyboard
+// Space and Comma, and the control consumes the rest itself (caret moves, stepping a number, choosing an option).
+// Buttons only keep Space (press) and Tab (move focus); other keys still drive the board.
+
+for (let element of [settings_pane.outer, move_report.outer]) {
+	element.addEventListener("keydown", (event) => {
+		let target = event.target;
+		if (target.matches("button")) {
+			if (event.code === "Space" || event.code === "Tab") {
+				event.stopPropagation();
+			}
+		} else if (target.matches("input, select")) {
+			if (["Space", "Comma", "Tab", "Home", "End", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.code)) {
+				event.stopPropagation();
+			}
+			if (target.matches("input[type=text]") && (event.code === "ArrowUp" || event.code === "ArrowDown")) {
+				event.preventDefault();				// Unused by a one-line field, they would reach the menu's Backward / Forward.
+			}
+		}
+	});
+}
 
 // Dragging files onto the window should load them...
 

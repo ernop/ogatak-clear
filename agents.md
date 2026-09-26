@@ -14,6 +14,10 @@ improving the comprehensibility of the AI data shown during game review.
   strip, variation tree as a pane, and restart-safe persistence. Read
   it before touching layout, zoom, window size, or show/hide. When it
   disagrees with `PRODUCT.md` about layout, it wins.
+- `src/modules/settings_schema.js` / `settings_pane.js` — the Settings pane
+  (File → Settings..., Ctrl+,): every user-facing setting on one page,
+  applied through `hub.set()`. A new user-facing config key gets a row in
+  `settings_schema.js`. Requirements: `PRODUCT-workspace.md` "Settings pane".
 - `src/modules/move_report.js` — the Move Report panel: score-history chart,
   turn indicator, last-move verdict, outcome change, next-move options table.
   Section order/visibility and sizes are config-driven and adjustable live
@@ -84,9 +88,23 @@ the `--inspect` main process (look the page up with
 subclassed windows). CDP `Input.dispatchMouseEvent` takes zoomed CSS pixel
 coordinates, which is how README screenshots show real board hovers.
 
+Sandbox practicalities:
+
+- Start the sandbox as a background job of its own. If you start it with
+  `(… &)` inside another command, it is killed when that command returns.
+- Stop it with `pkill -f "[o]ffscreen-app"`. The bracket keeps the
+  pattern from matching the shell running the pkill.
+- A page reload does not restart the renderer: main answers
+  `renderer_started` once. Restart the app instead.
+- CDP key events (`Input.dispatchKeyEvent`) reach the page's handlers
+  but never Electron's menu accelerators in the offscreen window. A
+  menu-accelerator path (Esc, Left/Right siblings) can't be exercised
+  that way.
+
 Pure-logic tests run with plain Node: `node src/modules/utils.test.js`,
-`node src/modules/eval_history.test.js`, and
-`node src/modules/candidate_profile.test.js`.
+`node src/modules/eval_history.test.js`,
+`node src/modules/candidate_profile.test.js`, and
+`node src/modules/settings_schema.test.js`.
 
 ## UI conventions
 

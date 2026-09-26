@@ -35,6 +35,7 @@ function startup() {
 	global.grapher = require("./grapher");
 	global.tree_drawer = require("./tree_drawer");
 	global.move_report = require("./move_report");
+	global.settings_pane = require("./settings_pane");		// After move_report: copies its breadth-view options.
 	global.comment_drawer = require("./comment_drawer");
 	global.fullbox = require("./fullbox");
 	global.stderrbox = require("./stderrbox");

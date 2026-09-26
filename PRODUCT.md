@@ -284,12 +284,34 @@ continuation requires engine support beyond this snapshot rule.
 ### Pondering limit
 
 Normal Space-key pondering uses the persisted `ponder_visits` setting,
-not a source-code constant. It is selectable under **Analysis → Ponder
-visits**, independently of `autoanalysis_visits`. The initial value is
-1,000,000 to preserve earlier behavior; choices range from 1,000 to
-5,000,000. The selected limit applies when the next normal analysis
-query starts. Visit count controls analysis effort rather than elapsed
-seconds, which varies with the position and hardware.
+not a source-code constant. The initial value is 1,000,000, which keeps
+the earlier behaviour. It is independent of `autoanalysis_visits`.
+Visit count controls analysis effort rather than elapsed seconds,
+which vary with the position and hardware.
+
+- **Where it is set** (2026-09-26): typed in **Settings → Analysis →
+  Visit limit per position** as any whole number from 2 to
+  1,000,000,000, or picked from the presets under **Analysis → Ponder
+  visits** (1,000 to 5,000,000). A typed value is added to that menu's
+  list at the next start.
+- **Time estimate:** Settings shows the time a limit takes at the
+  engine's measured speed, but the setting itself stays in visits.
+- **A new limit applies immediately** (2026-09-26, formerly "when the
+  next query starts"): a running normal search restarts under it.
+  - KataGo cannot resume a terminated search, so the new search
+    starts from zero visits, but its neural-network cache is warm.
+  - The snapshot rule below keeps the displayed analysis until the new
+    search overtakes it.
+  - Raising the limit therefore keeps the engine working toward the
+    new target. Lowering it stops the old search at once; the
+    replacement stops at the new limit.
+  - Other modes (autoanalysis, self-play, engine play) use
+    `autoanalysis_visits`, so their query is unchanged and nothing
+    restarts.
+- **Menu checkmark** (2026-09-26): the menu's checkmark follows the
+  value. Until then it vanished after picking any preset of 1,000 or
+  more, because the labels have thousands separators and the check
+  sync compared them against the bare number.
 
 ## Layout: the panel owns the whole right side (respecified 2026-08-11)
 

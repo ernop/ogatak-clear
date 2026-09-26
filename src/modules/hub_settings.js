@@ -32,6 +32,11 @@ const multichecks = {
 	language:				[translate("MENU_LANGUAGE")],
 };
 
+const multicheck_labels = {
+	autoanalysis_visits:	n => n.toLocaleString("en-US"),		// As visit_submenu() in main.js labels them.
+	ponder_visits:			n => n.toLocaleString("en-US"),
+};
+
 const togglechecks = {
 	fast_first_report:		[translate("MENU_SETUP"), translate("MENU_FAST_FIRST_REPORT")],
 	ownership_per_move:		[translate("MENU_ANALYSIS"), translate("MENU_PER_MOVE")],
@@ -240,6 +245,8 @@ module.exports = {
 		case "analysis_pv_len":
 		case "wide_root_noise":
 		case "report_every":
+		case "ponder_visits":						// A running normal search restarts under the new limit; the snapshot rule keeps its analysis.
+		case "default_rules":						// Matters for games with unknown rules. go() is a no-op when the query is unchanged.
 
 			if (this.engine.desired) {
 				this.go();
@@ -325,12 +332,30 @@ module.exports = {
 			this.draw();
 			break;
 
+		case "move_report_width":					// The panel's own controls write these directly;
+		case "move_report_chart_height":			// this is the path for everything else (Settings).
+		case "move_report_sections":
+		case "move_report_breadth_view":
+		case "move_report_distribution_top_n":
+		case "move_report_quality_yscale":
+		case "move_report_quality_windowed":
+		case "move_report_quality_window_n":
+		case "move_report_status_yscale":
+		case "move_report_status_windowed":
+		case "move_report_status_window_n":
+		case "move_report_history_xscale":
+		case "tree_pane_height":
+
+			move_report.draw(this.node);
+			break;
+
 		}
 
 		// Various fixes to menu items and suchlike................................................
 
 		if (multichecks.hasOwnProperty(key)) {
-			ipcRenderer.send("set_checks", multichecks[key].concat([value]));
+			let label = multicheck_labels.hasOwnProperty(key) ? multicheck_labels[key](value) : value;
+			ipcRenderer.send("set_checks", multichecks[key].concat([label]));
 		}
 
 		if (togglechecks.hasOwnProperty(key)) {
@@ -375,6 +400,11 @@ module.exports = {
 		}
 
 		save_soon();
+		ipcRenderer.send("config_sync", key, config[key]);		// config[key], not value: some keys refuse a value (see "engine").
+
+		if (global.settings_pane) {
+			settings_pane.refresh_soon();
+		}
 
 	},
 
@@ -509,6 +539,7 @@ module.exports = {
 		this.fix_colours_menu();
 		this.fix_gradient_menu();
 		save_soon();
+		settings_pane.refresh_soon();
 	},
 
 	// --------------------------------------------------------------------------------------------

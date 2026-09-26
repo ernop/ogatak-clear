@@ -282,6 +282,17 @@ electron.app.whenReady().then(() => {					// If "ready" event already happened, 
 		verify_menupath(msg);
 	});
 
+	electron.ipcMain.on("menu_click", (event, msg) => {		// msg is a menupath; lets the Settings pane reuse menu dialogs.
+		let item = get_submenu_items(msg);
+		if (item && !Array.isArray(item) && typeof item.click === "function") {
+			item.click();
+		}
+	});
+
+	electron.ipcMain.on("config_sync", (event, key, value) => {	// The renderer owns config; keep ours current for the values we read.
+		config[key] = value;
+	});
+
 	electron.ipcMain.on("screenshot", (event, msg) => {		// msg is {x, y, width, height}
 		Promise.all([
 			win.webContents.capturePage(msg),
@@ -348,6 +359,13 @@ function menu_build() {
 							fn: "about",
 							args: [electron.app.getName(), electron.app.getVersion()]
 						});
+					}
+				},
+				{
+					label: "Settings...",
+					accelerator: "CommandOrControl+,",		// Normally handled by the renderer, see __start_handlers.js
+					click: () => {
+						win.webContents.send("call", "toggle_settings");
 					}
 				},
 				{
@@ -2760,7 +2778,11 @@ function visit_submenu(value_key, options_key) {
 
 	let ret = [];
 
-	for (let n of config[options_key]) {
+	let values = config[options_key].includes(config[value_key])			// Keep a value typed in Settings selectable.
+		? config[options_key]
+		: [...config[options_key], config[value_key]].sort((a, b) => a - b);
+
+	for (let n of values) {
 		ret.push({
 			label: n.toLocaleString("en-US"),
 			type: "checkbox",

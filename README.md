@@ -24,6 +24,9 @@ search's visits; moves that have since left the board are dashed. See the
 
 ## Recent additions
 
+* **Settings**: every setting on one page, with typed values, a find box,
+  and the live board beside it. The visit limit per position accepts any
+  number, and the page shows how long it takes at your engine's speed.
 * **Best + N candidates**: show a fixed number of options, always including
   the move actually played, instead of every move within a points cutoff.
 * **Eval history**: every candidate's value over the whole search, charted
@@ -33,6 +36,28 @@ search's visits; moves that have since left the board are dashed. See the
   flash into the Best + N places for a tenth of a second.
 * **Candidate colours restored in Next Move Options**: the page's security
   policy had been silently blocking the table's value colours.
+
+## Settings
+
+![Settings open beside a live analysis of Lee Sedol–AlphaGo Game 4](docs/screenshots/settings-pane.png)
+
+_Settings open during analysis. The board and its candidates stay live on
+the left. The Analysis card shows that the 1,000,000-visit limit takes
+about 10 minutes at the engine's current 1,625 visits/s._
+
+* Open it with File → Settings... (`Ctrl+,`) or **⚙ settings** on the Move
+  Report bar. Close it with Esc, `Ctrl+,`, or its close button.
+* Every setting from the menus is here, grouped into cards, along with
+  several that used to be `config.json`-only: the Best + N visit minimum,
+  default rules and komi, and the variation-tree height. Each row shows its
+  current value.
+* Numbers are typed (`1,000,000`, `1m`, `250k`); − / + and the arrow keys
+  step through the usual presets. Changes apply at once and save
+  themselves; there is no Apply button.
+* **Find** narrows the page to matching settings. Typing in a field never
+  triggers board shortcuts, and Space still toggles analysis after you
+  click a setting.
+* The menus still work as before and stay in step with Settings.
 
 ## Candidate moves on the board
 
@@ -138,8 +163,9 @@ the current candidate distribution, and directly comparable next moves._
   the engine, model, rules, komi, board, move history, and search settings
   match. This preserves analysis snapshots; it does not resume KataGo's
   terminated search tree.
-* **Analysis → Ponder visits** sets the normal analysis limit independently
-  of autoanalysis.
+* The visit limit per position is independent of autoanalysis. It is set to
+  any number in Settings, or from presets under **Analysis → Ponder visits**.
+  A new limit applies to the running search immediately.
 * Fullscreen (`Alt+Enter`) and persistent whole-UI zoom (`Ctrl+=`, `Ctrl+-`,
   `Ctrl+Shift+0`).
 
