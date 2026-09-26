@@ -12,7 +12,8 @@ module.exports = {
 		if (typeof config.board_font_override === "string" && config.board_font_override !== "") {
 			return config.board_font_override;
 		}
-		if (square_size < 0) {
+		square_size = Math.floor(square_size);			// Fork change: square sizes can be fractional CSS pixels (see board_drawer).
+		if (!(square_size >= 0)) {
 			square_size = 0;
 		}
 		if (square_size >= arr.length) {

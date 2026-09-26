@@ -71,6 +71,21 @@ Systems that fight these rules are not used:
 - Chromium session zoom fighting `zoom_factor`. One zoom value, from
   config, applied once.
 
+### The board under UI zoom (2026-09-26)
+
+- **Whole device pixels.** A board square is always a whole number of
+  device pixels, at any UI zoom and display scale. In CSS pixels it may
+  be fractional (`window.devicePixelRatio` includes the UI zoom).
+  - Why: at 50% zoom a 95 CSS px square was 47.5 device px. Alternate
+    squares then started on half pixels, where their grid lines
+    vanished. The board showed a cross at every other intersection,
+    with star points floating between them.
+- **Grid images at device resolution.** The grid-line images are drawn
+  at device resolution. Their lines keep the same physical thickness
+  (`board_line_width` at 100% zoom) whatever the UI zoom, matching the
+  board's own constant physical size. At 100% zoom on a 1× display,
+  rendering is identical to before.
+
 ## Chrome the user can toggle
 
 Every chrome piece is a named, persisted flag or list. Toggles live

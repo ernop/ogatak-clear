@@ -6,18 +6,25 @@ let ctx = c.getContext("2d", {willReadFrequently: true});
 let c2 = document.createElement("canvas");
 let ctx2 = c2.getContext("2d", {willReadFrequently: true});
 
-module.exports = function(square_size, board_line_width, grid_colour) {
+// Fork change: square_size is in device pixels and scale is device pixels per CSS pixel at 100% UI zoom,
+// so lines are crisp and keep their thickness whatever the zoom. Returns .shift, the device-pixel offset
+// of the lines from each square's centre.
+
+module.exports = function(square_size, board_line_width, grid_colour, scale = 1) {
 
 	let ret = {};
 
 	c.width = square_size * 3;
 	c.height = square_size * 3;
 
-	ctx.lineWidth = board_line_width;
+	let line_width = Math.max(1, Math.round(board_line_width * scale));
+
+	ctx.lineWidth = line_width;
 	ctx.strokeStyle = grid_colour;
 	ctx.fillStyle = grid_colour;
 
-	let offset = ((board_line_width + square_size) % 2 === 1) ? 0.5 : 0;
+	let offset = ((line_width + square_size) % 2 === 1) ? 0.5 : 0;
+	ret.shift = offset;
 
 	for (let x = 0; x < 3; x++) {
 
@@ -59,7 +66,7 @@ module.exports = function(square_size, board_line_width, grid_colour) {
 	let gx = square_size + (square_size / 2) + offset;
 	let gy = square_size + (square_size / 2) + offset;
 	ctx.beginPath();
-	ctx.arc(gx, gy, board_line_width + 2, 0, 3 * Math.PI);		// I've experimented with +2 or *2
+	ctx.arc(gx, gy, (board_line_width + 2) * scale, 0, 3 * Math.PI);		// I've experimented with +2 or *2
 	ctx.fill();
 
 	ret.hoshi = get_image_url(1, 1, ss);

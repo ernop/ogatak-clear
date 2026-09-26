@@ -118,6 +118,11 @@ Pure-logic tests run with plain Node: `node src/modules/utils.test.js`,
   never add a pane-local font-size config key or control (the Move Report
   panel once had one — `move_report_font_size` — and it silently drifted
   out of step with the rest of the UI; it was removed).
+- **`board_drawer.square_size` can be fractional CSS pixels.** It is a
+  whole number of device pixels, so the grid stays crisp under UI zoom
+  (`PRODUCT-workspace.md`, "The board under UI zoom"). Never use it as
+  an array index or assume it is an integer. `board_font_chooser`
+  floors it.
 - **No inline styles in our modules.** Every style rule lives in
   `ogatak.css` classes. JS and HTML templates never set concrete style
   properties; config- or data-driven values (card width, section order,

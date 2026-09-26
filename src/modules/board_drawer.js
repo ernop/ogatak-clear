@@ -118,7 +118,7 @@ function init() {
 
 		infodiv_displaying_stats: false,			// Becomes true when normal (i.e. non-error) stuff is shown.
 
-		grid_has_half_pixel_shift: false,
+		grid_line_shift: 0,
 
 		rebuild_count: 0,							// For debugging.
 		draw_count: 0,								// Used by hub to avoid redundant draws.
@@ -148,7 +148,8 @@ let board_drawer_prototype = {
 		// We may or may not need to remake the gridline PNG images that we draw...
 
 		if (this.square_size !== desired_square_size || this.board_line_width !== config.board_line_width || this.grid_colour !== config.grid_colour) {
-			this.gridlines = gridlines(desired_square_size, config.board_line_width, config.grid_colour);
+			let dpr = window.devicePixelRatio || 1;				// Images at device resolution; lines keep their thickness at any UI zoom.
+			this.gridlines = gridlines(Math.round(desired_square_size * dpr), config.board_line_width, config.grid_colour, dpr / config.zoom_factor);
 		}
 
 		// We may or may not need to remake the hoshi array...
@@ -268,7 +269,7 @@ let board_drawer_prototype = {
 		this.has_drawn_candidates = false;
 		this.pv = null;
 
-		this.grid_has_half_pixel_shift = (config.board_line_width + desired_square_size) % 2 === 1;
+		this.grid_line_shift = this.gridlines.shift / (window.devicePixelRatio || 1);		// CSS px from a square's centre to its grid lines.
 
 		// Set sizes of the big elements...
 
@@ -311,11 +312,16 @@ let board_drawer_prototype = {
 		let dy = window.innerHeight - this.canvas.getBoundingClientRect().top;
 		let adjust = coordinates ? 1 : 0;
 		let border = coordinates ? 0 : 10;
-		if (config.embiggen_small_boards) {
-			return Math.max(10, Math.floor((dy - border) / Math.max(width + adjust, height + adjust)));
-		} else {
-			return Math.max(10, Math.floor((dy - border) / Math.max(width + adjust, height + adjust, 19 + adjust)));
-		}
+		let lines = config.embiggen_small_boards
+			? Math.max(width + adjust, height + adjust)
+			: Math.max(width + adjust, height + adjust, 19 + adjust);
+
+		// Fork change: a whole number of device pixels (devicePixelRatio includes the UI zoom), so the
+		// result may be fractional in CSS pixels. At a fractional device size, alternate squares start
+		// on half pixels, where their grid lines vanish.
+
+		let dpr = window.devicePixelRatio || 1;
+		return Math.max(Math.ceil(10 * dpr), Math.floor((dy - border) * dpr / lines)) / dpr;
 	},
 
 	redo_translations: function() {			// Unused in code, purely for dev purposes.
@@ -337,9 +343,9 @@ let board_drawer_prototype = {
 		ctx.fillStyle = colour;
 		let gx = x * this.square_size + (this.square_size / 2);
 		let gy = y * this.square_size + (this.square_size / 2);
-		if (adjust && this.grid_has_half_pixel_shift) {
-			gx += 0.5;
-			gy += 0.5;
+		if (adjust) {
+			gx += this.grid_line_shift;
+			gy += this.grid_line_shift;
 		}
 		ctx.beginPath();
 		ctx.arc(gx, gy, fraction * this.square_size / 2, 0, 2 * Math.PI);
