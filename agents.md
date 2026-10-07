@@ -123,11 +123,15 @@ Sandbox practicalities:
   the user's engine should point `engineconfig` at a copy whose `logDir`
   is under `/tmp`.
 
-Pure-logic tests run with plain Node: `node src/modules/utils.test.js`,
+Pure-logic tests run with plain Node, no install: `node src/modules/utils.test.js`,
 `node src/modules/eval_history.test.js`,
 `node src/modules/candidate_profile.test.js`,
 `node src/modules/settings_schema.test.js`, and
-`node src/modules/explored.test.js`.
+`node src/modules/explored.test.js`. CI (`.github/workflows/tests.yml`) runs
+`node --check` on `src/*.js` and `src/modules/*.js`, then every
+`src/modules/*.test.js`, on each push and pull request, so a new test file
+is picked up by its name alone. A test must not need Electron installed:
+stand in for the `electron` module as `settings_schema.test.js` does.
 
 ## UI conventions
 

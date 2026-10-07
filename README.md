@@ -213,7 +213,8 @@ the current candidate distribution, and directly comparable next moves._
 * Download and unpack KataGo and a KataGo weights file.
 * In Ogatak, select the menu item `Setup` `-->` `Locate KataGo...` (and locate the KataGo executable)
 * In Ogatak, select the menu item `Setup` `-->` `Choose network...` (and locate the weights file)
-* The pure-logic tests run with plain Node: `node src/modules/utils.test.js`, `node src/modules/eval_history.test.js`, `node src/modules/candidate_profile.test.js`, `node src/modules/settings_schema.test.js`, and `node src/modules/explored.test.js`.
+* The pure-logic tests run with plain Node and need no install: `node src/modules/utils.test.js`, `node src/modules/eval_history.test.js`, `node src/modules/candidate_profile.test.js`, `node src/modules/settings_schema.test.js`, and `node src/modules/explored.test.js`.
+* GitHub Actions ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) syntax-checks every source file and runs every `src/modules/*.test.js` on each push and pull request.
 
 ## Performance tips
 

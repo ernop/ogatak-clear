@@ -1,6 +1,16 @@
 "use strict";
 
 const assert = require("assert");
+const Module = require("module");
+
+// config_io requires electron, which plain Node lacks until Electron is
+// installed. Outside Electron that module has no `app` anyway, so an empty
+// stand-in behaves the same.
+
+const load_module = Module._load;
+Module._load = function(request, ...rest) {
+	return request === "electron" ? {} : load_module.call(this, request, ...rest);
+};
 
 global.user_data_path = require("os").tmpdir();			// config_io wants it outside Electron.
 const config_io = require("./config_io");
