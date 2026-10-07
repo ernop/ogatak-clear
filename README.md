@@ -25,8 +25,11 @@ search's visits; moves that have since left the board are dashed. See the
 ## Recent additions
 
 * **Explored moves**: play a move yourself, let KataGo search it, and step
-  back. The move now shows the value that search found, marked "explored",
-  even when the position's own search barely looked at it or never did.
+  back. The move now shows the value that search found, even when the
+  position's own search barely looked at it or never did.
+* **Every variation's next move**: Display → Show every variation's next
+  move puts the next move of every line you've played from a position on the
+  board and in Next Move Options, in either candidate mode.
 * **Settings**: every setting on one page, with typed values, a find box,
   and the live board beside it. The visit limit per position accepts any
   number, and the page shows how long it takes at your engine's speed.
@@ -70,22 +73,28 @@ about 10 minutes at the engine's current 1,625 visits/s._
 * **Display → Candidate moves shown** chooses which circles appear:
   * **Points from best** (`≤ 0.30` … `≤ 8.00`, or All; default `≤ 0.30`)
     shows every move within that many points of best, regardless of visits.
-    **Display → Always show next-move eval** (default on) also draws the
-    game's next move when KataGo has evaluated it, even past the cutoff.
   * **Best + N moves** (`Best only`, `Best + 1 move` … `Best + 10 moves`;
-    default N = 4) always shows the game's actual next move when KataGo has
-    evaluated it, the best move, and the N next-best moves by score. A move
-    needs 50 visits (`candidate_min_visits`) before it can take one of those
-    places. Over 32 measured positions, that cut moves flashing in and out
-    from 346 to 42.
+    default N = 4) shows the best move and the N next-best moves by score.
+    A move needs 50 visits (`candidate_min_visits`) before it can take one
+    of those places. Over 32 measured positions, that cut moves flashing in
+    and out from 346 to 42.
+* **Display → Show every variation's next move** (default on) adds, in
+  either mode, the next move of every line that continues from here: the
+  game's own next move and every variation you've played. Each shows its
+  best-known value, even past the cutoff. Next Move Options lists them after
+  its top six. A move with no value yet (never searched, and never tried by
+  this position's search) isn't drawn; **Next move markers** shows where it
+  is.
 * Circles use one continuous colour gradient from best to worst, chosen under
   **Display → Gradient**. With a points cutoff, the cutoff is the scale; with
   All or Best + N, the scale runs to the worst move shown, the played move
   included, so a clearly worse move never shares a colour with a better one.
-* A move you played and searched yourself is drawn as a rounded square
-  carrying that search's value, once it has more visits than the current
-  position's search gave the move. Next Move Options marks it "explored".
-  The rules are in [PRODUCT.md](PRODUCT.md), "Explored moves".
+* A move you played and searched yourself carries that search's value, once
+  that search has more visits than the current position's search gave the
+  move. On the board it looks like any other candidate; **Display → Mark
+  explored moves** draws it as a rounded square instead. Next Move Options
+  marks it "explored". The rules are in [PRODUCT.md](PRODUCT.md),
+  "Explored moves".
 
 ## Eval history
 

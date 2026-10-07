@@ -7,7 +7,7 @@ global.config = {};
 const new_node = require("./node");
 const {ANALYSIS_CONTEXT_PROPERTY, analysis_context} = require("./query");
 const {same_settings, merge, child_results, node_infos} = require("./explored");
-const {select_candidates, next_move_gtp_set} = require("./utils");
+const {select_candidates, next_move_gtp_set, board_candidates, options_table_infos} = require("./utils");
 
 const ENGINE = {mode: "analysis", filepath: "/k/katago", engineconfig: "/k/a.cfg", weights: "/k/net.bin.gz", version: [1, 16, 0]};
 
@@ -163,7 +163,7 @@ assert.deepStrictEqual(infos[2], {
 });
 assert.strictEqual(infos[3].prior, 0.0001);
 
-// The board's selection always includes played moves, so the explored move is drawn.
+// With every variation's next move shown (the default), the explored move is drawn.
 // White to play, so a higher Black-POV lead costs White: D4 leaves Black 0.2 more than Q4.
 
 let shown = select_candidates(infos, false, next_move_gtp_set(p), {mode: "count", threshold: 0.3, count: 0, min_visits: 50});
@@ -182,5 +182,53 @@ analyse(p, at_p, {
 });
 assert.strictEqual(node_infos(p)[1], p.analysis.moveInfos[1]);
 assert.strictEqual(node_infos(p)[1].explored, undefined);
+
+// ------------------------------------------------------------------------------------------------
+// Every variation's next move (always_show_next_move_eval): added to the board in either filter
+// mode and listed in Next Move Options after the first six. Off, the filter and the first six
+// alone decide, and an explored move competes like any other move.
+
+let q = child(root, "B", "dd");				// D16; White to play at q.
+let q_moves = ["Q16", "Q4", "D4", "R16", "C4", "Q17", "R4", "C17"];
+
+analyse(q, context([["B", "D16"]]), {
+	id: "q", rootInfo: {visits: 5000, winrate: 0.5, scoreLead: 0.5},
+	moveInfos: q_moves.map((move, i) => ({move, order: i, visits: 1000 - 100 * i, winrate: 0.5, scoreLead: 0.5 + 0.4 * i, prior: 0.1, pv: [move]})),
+	policy,
+});
+
+child(q, "W", "cc");						// C17: q's eighth move, played but never searched.
+child(q, "W", "jj");						// K10: never reported or searched, so it has no value.
+child(q, "B", "qp");						// R4 by Black: not one of White's options.
+analyse(child(q, "W", "jp"), context([["B", "D16"], ["W", "K4"]]), {		// K4: explored, 0.2 worse than Q16.
+	id: "k4", rootInfo: {visits: 1000, winrate: 0.5, scoreLead: 0.7}, moveInfos: [{move: "Q16", order: 0, visits: 600, pv: ["Q16"]}],
+});
+analyse(child(q, "W", ""), context([["B", "D16"], ["W", "pass"]]), {
+	id: "q-pass", rootInfo: {visits: 300, winrate: 0.9, scoreLead: 9.0}, moveInfos: [{move: "Q16", order: 0, visits: 300, pv: ["Q16"]}],
+});
+
+assert.deepStrictEqual(Object.keys(next_move_gtp_set(q)).sort(), ["C17", "K10", "K4"]);
+assert.deepStrictEqual(Object.keys(next_move_gtp_set(q, true)).sort(), ["C17", "K10", "K4", "pass"]);
+assert.deepStrictEqual(moves(node_infos(q)), q_moves.concat(["K4", "pass"]));
+
+let on_board = (settings) => {
+	Object.assign(config, settings);
+	return moves(board_candidates(q).infos);
+};
+let best_plus = (n) => ({candidate_filter: "count", candidate_count: n, candidate_min_visits: 50});
+let within = (points) => ({candidate_filter: "cost", cost_threshold: points});
+
+config.always_show_next_move_eval = true;
+assert.deepStrictEqual(on_board(best_plus(0)), ["Q16", "C17", "K4"]);
+assert.deepStrictEqual(on_board(within(0.3)), ["Q16", "C17", "K4"]);
+assert.deepStrictEqual(moves(options_table_infos(q)), ["Q16", "Q4", "D4", "R16", "C4", "Q17", "C17", "K4", "pass"]);
+
+config.always_show_next_move_eval = false;
+assert.deepStrictEqual(on_board(best_plus(0)), ["Q16"]);
+assert.deepStrictEqual(on_board(best_plus(2)), ["Q16", "Q4", "K4"]);		// K4 (0.2) and Q4 (0.4) are the cheapest.
+assert.deepStrictEqual(on_board(within(0.3)), ["Q16", "K4"]);
+assert.deepStrictEqual(moves(options_table_infos(q)), ["Q16", "Q4", "D4", "R16", "C4", "Q17"]);
+
+assert.deepStrictEqual(options_table_infos(child(root, "B", "aa")), []);		// No analysis yet.
 
 console.log("explored tests passed");

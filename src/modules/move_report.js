@@ -37,7 +37,7 @@ const candidate_profile = require("./candidate_profile");
 const eval_history = require("./eval_history");
 const explored = require("./explored");
 const type_scale = require("./type_scale");
-const {info_cost, safe_html, board_candidates} = require("./utils");
+const {info_cost, safe_html, board_candidates, options_table_infos} = require("./utils");
 
 const SECTION_TITLES = {
 	quality:  "MOVE QUALITY",
@@ -955,12 +955,10 @@ let move_report_prototype = {
 			// Costs are vs the best AVAILABLE move (infos[0]), never vs the
 			// global board value: if we're losing badly, the best we can do
 			// from here is the reference point (PRODUCT.md rule 5)...
-			// Explored moves outside the top 6 are listed after it.
 
-			let all = explored.node_infos(node);
-			let best_lead = all[0].scoreLead;
+			let infos = options_table_infos(node);
+			let best_lead = infos[0].scoreLead;
 			let active_is_b = node.get_board().active === "b";
-			let infos = all.slice(0, 6).concat(all.slice(6).filter(info => info.explored));
 			let costs = infos.map(info => info_cost(info, best_lead, active_is_b));
 
 			// Gradient cap: worst displayed cost, floored at 2 pts so near-equal

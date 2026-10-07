@@ -101,18 +101,12 @@ reference.
    received; the move count's places have a small visit minimum (below).
    - *Points from best* (`≤ 0.30` … `≤ 8.00`, or All): every candidate
      at most that many points worse than the best move. Default 0.30.
-     The game's next move is also shown when KataGo has evaluated it
-     (Display → Always show next-move eval, default on).
    - *Move count* (`Best only`, `Best + 1 move` … `Best + 10 moves`;
-     N defaults to 4) (2026-09-25): always (1) the game's actual next
-     move — and any variation from this node — when KataGo has evaluated
-     it, (2) the engine's best move, and (3) the N lowest-cost other
-     moves among those with at least `candidate_min_visits` visits
-     (default 50). A move already in (2) or (3) is drawn once. Fewer
-     than N appear when fewer moves qualify — early in a search or in
-     forced positions. (1) and (2) are shown however few visits they
-     have. The next move is included regardless of the Always-show
-     toggle, which governs only points cutoffs. Rationale: a points
+     N defaults to 4) (2026-09-25): the engine's best move and the N
+     lowest-cost other moves among those with at least
+     `candidate_min_visits` visits (default 50). Fewer than N appear when
+     fewer moves qualify — early in a search or in forced positions. The
+     best move is shown however few visits it has. Rationale: a points
      cutoff shows a crowd of near-equal circles in quiet positions (19 at
      ≤ 0.50 in the opening that prompted this) and only one in sharp
      ones; a count always gives the same number of alternatives beside
@@ -125,6 +119,22 @@ reference.
      visit. A minimum of 50 left 42 (30 left 71; 100 left 29). Also
      admitting any move considered for 1 s was rejected: it re-admitted
      still-noisy moves and left 112.
+   - *Every variation's next move* (2026-10-07): **Display → Show every
+     variation's next move** (`always_show_next_move_eval`, default on)
+     adds, in either mode, the next move of every line that continues
+     from this position — the game's own next move and every variation —
+     whenever it has a value: this position's search reported it, or the
+     move was explored (item 13). It is drawn at that value however few
+     visits it has; a move already shown is drawn once. Next Move Options
+     lists the same moves after its first six, passes included. A move by
+     the other colour is skipped (it is not one of this position's
+     options), and a move with no value yet, never reported and never
+     searched, is not drawn; Next move markers shows where it is. Off,
+     the cutoff or count alone decides and the table shows its first six;
+     an explored move then competes like any other move. Before
+     2026-10-07 this item was "Always show next-move eval" and covered
+     points cutoffs only, while move counts added these moves
+     unconditionally; with the default on, the board is unchanged.
 6. **Quality of moves** — (respecified 2026-08-11: this is NOT a
    line graph) a bar chart, one bar per move, on a FIXED axis: up always
    means "White gained points", down always means "Black gained points" —
@@ -275,14 +285,20 @@ reference.
      value when it was explored too. An explored move that scores better
      shows a positive Delta and costs 0, like any move better than the
      reference (rule 5).
-   - Shown in: board candidates, drawn as rounded squares instead of
-     circles, so the shape says whose search the numbers come from;
-     hovering one shows its line of play, its score, and "Visits: N
-     explored" in the info bar. Labels: Delta, Score, Winrate, Visits, and
-     Policy as usual; LCB and Visits (%) show "—"; Order shows P's rank when
-     P's search ranked the move, otherwise "—". Next Move Options: the
-     visits cell says "explored", explored moves outside the top six are
-     listed after them, and a footnote explains the tag. Eval history: a
+   - Shown in: board candidates, drawn like any other candidate
+     (2026-10-07). An explored move is a move like any other, and its
+     value means what every candidate's value means, KataGo's evaluation
+     of the position after it, only from a bigger search. **Display → Mark
+     explored moves** (`mark_explored_moves`, default off) draws explored
+     moves as rounded squares, for anyone who wants the source visible on
+     the board. Hovering one shows its line of play, its score, and
+     "Visits: N explored" in the info bar. Labels: Delta, Score, Winrate,
+     Visits, and Policy as usual; LCB and Visits (%) show "—"; Order shows
+     P's rank when P's search ranked the move, otherwise "—". Next Move
+     Options: the visits cell says "explored", since those visits belong
+     to another search and are not part of P's total; moves played from P
+     outside the first six are listed after them (item 6, "Every
+     variation's next move"); a footnote explains the tag. Eval history: a
      square just right of the current visits (its value is not a point in
      P's search), linked by a dotted line to the move's own line when it has
      one, otherwise labelled; following it gives "■ value", "explored", and
@@ -425,11 +441,13 @@ Requirements now:
    best in count mode; default 4; a hand-edited N is added to the menu),
    and `candidate_min_visits` (count mode's visit minimum; default 50;
    0 = none; config.json only). Points cutoffs never depend on visits.
-   With a points cutoff and
-   **Display → Always show next-move eval** on (default), the game's next
-   move — and any variation from this node — is also drawn if KataGo
-   reported it, even when it is worse than the cutoff; count mode always
-   draws it. The palette persists as `candidate_gradient`.
+   With **Display → Show every variation's next move** on
+   (`always_show_next_move_eval`, default true), the next move of every
+   variation from this node is also drawn when it has a value, in either
+   mode, even when it is worse than the cutoff, and is listed in Next
+   Move Options. **Display → Mark explored moves** persists as
+   `mark_explored_moves` (default false). The palette persists as
+   `candidate_gradient`.
    Editing `config.json` by hand is an equally supported path — the array
    IS the template: reorder it, delete from it, and that's the layout.
 7. **All text sizes come from the app's six-step type scale** (hero /
@@ -486,7 +504,8 @@ The **variation tree** is not removed. It is a hideable pane (section id
   lowest-cost other moves with at least `candidate_min_visits` visits
   appear; ties (including every move clamped to
   0) keep engine order, moves without a scoreLead rank last, and passes
-  are skipped because they cannot be drawn. Child-node moves KataGo
-  evaluated are added — always in count mode, and with a points cutoff
-  when `always_show_next_move_eval` is on — so a played blunder still
-  shows its Delta.
+  are skipped because they cannot be drawn. Child-node moves by the side
+  to move that have a value are added in either mode when
+  `always_show_next_move_eval` is on, so a played blunder still shows its
+  Delta (`utils.board_candidates`; Next Move Options' rows come from
+  `utils.options_table_infos`, both tested in `explored.test.js`).

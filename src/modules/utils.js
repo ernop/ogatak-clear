@@ -151,18 +151,19 @@ exports.candidate_count_label = function(n) {
 	return `Best + ${n} ${n === 1 ? "move" : "moves"}`;
 };
 
-// GTP vertices of moves actually present as children of this node
-// (the game's next move, plus any variations from here).
+// GTP vertices of the moves the side to move has played from this node (the
+// game's next move, plus any variations from here). A move by the other colour
+// is not one of this position's options, so this position's search has no
+// value for it. Passes only when asked for: they can't be drawn on the board.
 
-exports.next_move_gtp_set = function(node) {
+exports.next_move_gtp_set = function(node, with_pass = false) {
 	let board = node.get_board();
+	let key = board.active === "b" ? "B" : "W";
 	let set = Object.create(null);
 	for (let child of node.children) {
-		for (let key of ["B", "W"]) {
-			for (let s of child.all_values(key)) {
-				if (typeof s === "string" && s.length === 2) {
-					set[board.gtp(s)] = true;
-				}
+		for (let s of child.all_values(key)) {
+			if (typeof s === "string" && (s.length === 2 || with_pass)) {
+				set[board.gtp(s)] = true;
 			}
 		}
 	}
@@ -222,9 +223,10 @@ exports.select_candidates = function(infos, active_is_b, next_gtp, opts) {
 	return ret;
 };
 
-// Count mode always includes the game's next move(s); cost mode only when
-// always_show_next_move_eval is on. Explored moves (explored.js) carry the
-// result of their own position's search.
+// With always_show_next_move_eval on (Display → Show every variation's next
+// move), every move played from here that has a value is added, in either
+// mode. Explored moves (explored.js) carry the result of their own position's
+// search.
 
 exports.board_candidates = function(node) {
 
@@ -232,8 +234,7 @@ exports.board_candidates = function(node) {
 		return {infos: [], costs: [], scale: 0.5};
 	}
 
-	let count_mode = config.candidate_filter === "count";
-	let next_gtp = (count_mode || config.always_show_next_move_eval) ? exports.next_move_gtp_set(node) : null;
+	let next_gtp = config.always_show_next_move_eval ? exports.next_move_gtp_set(node) : null;
 
 	return exports.select_candidates(explored.node_infos(node), node.get_board().active === "b", next_gtp, {
 		mode: config.candidate_filter,
@@ -241,6 +242,22 @@ exports.board_candidates = function(node) {
 		count: config.candidate_count,
 		min_visits: config.candidate_min_visits,
 	});
+};
+
+// Next Move Options rows: the first six moves in KataGo's order, then, with
+// always_show_next_move_eval on, every other move played from here that has a
+// value, passes included.
+
+exports.options_table_infos = function(node) {
+
+	if (!node.has_valid_analysis()) {
+		return [];
+	}
+
+	let infos = explored.node_infos(node);
+	let next_gtp = config.always_show_next_move_eval ? exports.next_move_gtp_set(node, true) : null;
+
+	return infos.slice(0, 6).concat(next_gtp ? infos.slice(6).filter(info => next_gtp[info.move]) : []);
 };
 
 exports.moveinfo_filter = function(node) {

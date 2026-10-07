@@ -1401,6 +1401,14 @@ function menu_build() {
 					}
 				},
 				{
+					label: translate("MENU_MARK_EXPLORED_MOVES"),
+					type: "checkbox",
+					checked: config.mark_explored_moves,
+					click: () => {
+						win.webContents.send("toggle", "mark_explored_moves");
+					}
+				},
+				{
 					label: translate("MENU_NUMBERS"),
 					submenu: [
 						{

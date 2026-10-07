@@ -709,8 +709,9 @@ let board_drawer_prototype = {
 
 				this.wood(x, y);
 
-				// Explored moves (explored.js) are rounded squares, so the shape
-				// says whose search the numbers come from.
+				// With mark_explored_moves on, explored moves (explored.js) are
+				// rounded squares, so the shape says whose search the numbers
+				// come from.
 
 				if (o.explored) {
 					if (o.fill) {
@@ -1006,7 +1007,7 @@ let board_drawer_prototype = {
 				type: "analysis",
 				text: [],
 				fill: null,
-				explored: Boolean(info.explored),
+				explored: Boolean(info.explored) && config.mark_explored_moves,
 			};
 
 			let colour;

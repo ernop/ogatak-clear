@@ -67,9 +67,10 @@ exports.defaults = {
 	"numbers": "Delta",							// Lame stringly typed. Fork default: points vs best available (0 = best), not visits (PRODUCT.md).
 	"candidate_filter": "cost",					// "cost": use cost_threshold. "count": best move + candidate_count lowest-cost moves.
 	"cost_threshold": 0.3,						// Max points worse than the best available move; independent of visits.
-	"candidate_count": 4,						// Count mode: how many moves beyond the best. The game's next move is always added.
+	"candidate_count": 4,						// Count mode: how many moves beyond the best.
 	"candidate_min_visits": 50,					// Count mode: visits a move needs to take one of those places. 0 = no minimum.
-	"always_show_next_move_eval": true,			// Cost mode: also show the game's next move if KataGo evaluated it.
+	"always_show_next_move_eval": true,			// Display → Show every variation's next move: either mode, plus Next Move Options.
+	"mark_explored_moves": false,				// Draw explored moves (explored.js) as rounded squares instead of circles.
 	"candidate_gradient": "green_red",			// See colour_gradients.js. "classic" uses the Colours-menu pair.
 	"mouseover_pv": true,
 	"mouseover_delay": 0,
@@ -367,6 +368,10 @@ function apply_fixes() {
 
 	if (typeof config.always_show_next_move_eval !== "boolean") {
 		config.always_show_next_move_eval = exports.defaults.always_show_next_move_eval;
+	}
+
+	if (typeof config.mark_explored_moves !== "boolean") {
+		config.mark_explored_moves = exports.defaults.mark_explored_moves;
 	}
 
 	if (!colour_gradients.has(config.candidate_gradient)) {

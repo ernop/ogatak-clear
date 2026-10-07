@@ -30,13 +30,16 @@ improving the comprehensibility of the AI data shown during game review.
   Gradient), the Display → Candidate moves shown filter
   (`candidate_filter` / `cost_threshold` / `candidate_count` /
   `candidate_min_visits`, selected by `utils.select_candidates`), Display →
-  Always show next-move eval (`always_show_next_move_eval`) in `utils.js` /
-  `board_drawer.js`, `src/modules/eval_history.js` (per-search candidate
-  value history, recorded from `hub.receive_object`, drawn by the Move
-  Report's Eval history card), and `src/modules/explored.js` (explored
-  moves: a child's own search standing in for its parent's estimate of
-  that move; merged in by `utils.board_candidates`, Next Move Options, and
-  Eval history; requirements in `PRODUCT.md` item 13).
+  Show every variation's next move (`always_show_next_move_eval`, the key
+  kept from its earlier name "Always show next-move eval";
+  `utils.board_candidates` and `utils.options_table_infos`), Display → Mark explored moves
+  (`mark_explored_moves`, `board_drawer.js`), `src/modules/eval_history.js`
+  (per-search candidate value history, recorded from `hub.receive_object`,
+  drawn by the Move Report's Eval history card), and
+  `src/modules/explored.js` (explored moves: a child's own search standing
+  in for its parent's estimate of that move; merged in by
+  `utils.board_candidates`, Next Move Options, and Eval history;
+  requirements in `PRODUCT.md` item 13).
 
 ## Remotes
 

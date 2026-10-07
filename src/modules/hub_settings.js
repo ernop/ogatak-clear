@@ -44,6 +44,7 @@ const togglechecks = {
 	black_pov:				[translate("MENU_DISPLAY"), translate("MENU_BLACK_POV_ALWAYS")],
 	stone_counts:			[translate("MENU_DISPLAY"), translate("MENU_STONE_COUNTS")],
 	always_show_next_move_eval: [translate("MENU_DISPLAY"), translate("MENU_ALWAYS_SHOW_NEXT_MOVE_EVAL")],
+	mark_explored_moves:	[translate("MENU_DISPLAY"), translate("MENU_MARK_EXPLORED_MOVES")],
 	candidate_moves:		[translate("MENU_DISPLAY"), translate("MENU_CANDIDATE_MOVES")],
 	no_ponder_no_candidates:[translate("MENU_DISPLAY"), translate("MENU_NO_PONDER_NO_CANDIDATES")],
 	mouseover_pv:			[translate("MENU_DISPLAY"), translate("MENU_WITH_PV_MOUSEOVER")],
@@ -184,14 +185,20 @@ module.exports = {
 		case "cost_threshold":
 		case "candidate_count":
 		case "candidate_min_visits":
-		case "always_show_next_move_eval":
 		case "candidate_gradient":
 		case "mouseover_pv":
 		case "next_move_markers":
+		case "mark_explored_moves":
 		case "visit_colours":
 		case "black_pov":
 
 			this.draw();
+			break;
+
+		case "always_show_next_move_eval":			// Also decides Next Move Options' rows.
+
+			this.draw();
+			move_report.draw(this.node);
 			break;
 
 		case "embiggen_small_boards":
