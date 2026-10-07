@@ -64,6 +64,15 @@ reference.
    and which player is to move. Event, round, and result are secondary
    context. If neither player name exists, the strip is absent rather than
    displaying two large unknown placeholders.
+   The layout keeps that priority at every panel width. Below 44em, the
+   two players share a row only while every word of both names fits whole
+   (otherwise they stack), and event, round, and result sit beneath them.
+   From 44em, the event column sits between the players and takes at most
+   30% of the width, leaving each name room for about ten letters per
+   word. Below 44em a name breaks inside a word only when that word is
+   wider than the whole strip. (Before 2026-10-07 the event column took
+   its full one-line width first, so on the default 1333×780 window names
+   rendered one letter per line.)
 2. **Whose turn it is now** — stone icon + "BLACK TO PLAY" / "WHITE TO
    PLAY", large, always present.
 3. **Where the last move was** — highlighted on the board (stock behavior,

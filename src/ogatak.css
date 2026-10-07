@@ -342,32 +342,56 @@ body.row_dragging, body.row_dragging * {
 	width: 100%;
 }
 
+#mr_game_identity {
+	container-type: inline-size;
+}
+
 #mr_game_identity:empty {
 	display: none;
 }
 
+/* Names outrank event, round and result (PRODUCT.md, "Who is playing"). Below
+   44em the two players share a row only while every word of both names fits
+   whole, and the event context drops beneath them. */
+
 .mr_players {
 	align-items: stretch;
 	border-bottom: 1px solid #333333ff;
-	display: grid;
+	display: flex;
+	flex-wrap: wrap;
 	gap: 0.8em;
-	grid-template-columns: minmax(0, 1fr) minmax(8em, auto) minmax(0, 1fr);
+	grid-template-areas: "black meta white";
+	grid-template-columns: minmax(0, 1fr) fit-content(30%) minmax(0, 1fr);
 	margin-bottom: 0.7em;
 	padding-bottom: 0.7em;
+}
+
+@container (min-width: 44em) {
+	.mr_players {
+		display: grid;
+	}
 }
 
 .mr_player {
 	align-items: center;
 	background-color: #181818ff;
 	border: 1px solid #333333ff;
+	box-sizing: border-box;
 	display: flex;
+	flex: 1 1 0;
 	gap: 0.7em;
-	min-width: 0;
+	max-width: 100%;
 	padding: 0.65em 0.8em;
+}
+
+.mr_player_b {
+	grid-area: black;
 }
 
 .mr_player_w {
 	flex-direction: row-reverse;
+	grid-area: white;
+	order: 1;
 	text-align: right;
 }
 
@@ -404,7 +428,7 @@ body.row_dragging, body.row_dragging * {
 	color: #ffffffff;
 	font-size: var(--fs-hero);
 	font-weight: bold;
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 .mr_player_rank {
@@ -418,10 +442,18 @@ body.row_dragging, body.row_dragging * {
 	align-items: center;
 	color: #999999ff;
 	display: flex;
+	flex: 1 1 100%;
 	flex-direction: column;
 	font-size: var(--fs-ui);
+	grid-area: meta;
 	justify-content: center;
+	order: 2;
+	overflow-wrap: anywhere;
 	text-align: center;
+}
+
+.mr_game_meta:empty {
+	display: none;
 }
 
 .mr_game_result {
