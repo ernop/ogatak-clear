@@ -186,11 +186,14 @@ the current candidate distribution, and directly comparable next moves._
 ## Setup
 
 * Clone this repository and install Electron without adding it to the project manifest: `cd src && npm install --no-save electron`.
-* Run from the repository root with `src/node_modules/.bin/electron src`.
+* Run from the repository root with `src/node_modules/.bin/electron src`. The first run downloads the Electron binary, so it takes longer.
+* On Linux distributions that restrict unprivileged user namespaces (Ubuntu 24.04 and later), Electron stops at startup with "The SUID sandbox helper binary was found, but is not configured correctly". Give the helper the owner and mode it asks for, and repeat this after reinstalling or updating Electron:
+  `sudo chown root:root src/node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 src/node_modules/electron/dist/chrome-sandbox`.
+  Without sudo, start Ogatak with `src/node_modules/.bin/electron src --no-sandbox` instead.
 * Download and unpack KataGo and a KataGo weights file.
-* In Ogatak, select the menu item `Setup` `-->` `Locate KataGo...` (and locate katago.exe)
+* In Ogatak, select the menu item `Setup` `-->` `Locate KataGo...` (and locate the KataGo executable)
 * In Ogatak, select the menu item `Setup` `-->` `Choose network...` (and locate the weights file)
-* The pure-logic tests run with plain Node: `node src/modules/utils.test.js`, `node src/modules/eval_history.test.js`, and `node src/modules/candidate_profile.test.js`.
+* The pure-logic tests run with plain Node: `node src/modules/utils.test.js`, `node src/modules/eval_history.test.js`, `node src/modules/candidate_profile.test.js`, and `node src/modules/settings_schema.test.js`.
 
 ## Performance tips
 

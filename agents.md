@@ -46,6 +46,11 @@ improving the comprehensibility of the AI data shown during game review.
 - `cd src && node_modules/.bin/electron .` (Electron is npm-installed in
   `src/node_modules`, gitignored). The `ogatak` zsh alias and the desktop
   launcher do this.
+- This machine (Ubuntu 26.04) restricts unprivileged user namespaces, so
+  Electron aborts at startup unless `chrome-sandbox` is `root:root` mode
+  4755. Reinstalling Electron resets that; redo the chown/chmod from the
+  README's Setup, or pass `--no-sandbox` (startup ignores argv entries
+  that aren't existing files).
 - Engine paths live in the user config `~/.config/Ogatak/config.json`
   (KataGo TensorRT wrapper at `~/katago/trt/katago-trt`). Full KataGo setup
   story: mybrowser repo,
