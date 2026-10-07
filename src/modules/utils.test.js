@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("assert");
-const {select_candidates, candidate_count_label} = require("./utils");
+const {select_candidates, candidate_count_label, info_cost, loss_text} = require("./utils");
 
 // Black to play; scoreLead is Black-POV, so cost = best lead - lead.
 let infos = [
@@ -87,6 +87,19 @@ assert.deepStrictEqual(moves(gated(5, 50, {F1: true})), ["A1", "C1", "D1", "F1"]
 assert.deepStrictEqual(moves(gated(1, 50)), ["A1", "C1"]);
 assert.deepStrictEqual(moves(gated(2, 0)), ["A1", "B1", "C1"]);
 assert.deepStrictEqual(moves(select_candidates(noisy, true, null, {mode: "cost", threshold: 0.3, count: 5, min_visits: 50})), ["A1", "B1", "C1"]);
+
+// Points loss is written in unsigned hundredths; nothing lost is a smiley.
+
+assert.strictEqual(loss_text(0.67), "67");
+assert.strictEqual(loss_text(1.6), "160");
+assert.strictEqual(loss_text(0.05), "5");
+assert.strictEqual(loss_text(12.3456), "1235");
+assert.strictEqual(loss_text(0), "☻");
+assert.strictEqual(loss_text(0.004), "☻");
+assert.strictEqual(loss_text(0.006), "1");
+assert.strictEqual(loss_text(null), "");
+assert.strictEqual(loss_text(info_cost(infos[5], infos[0].scoreLead, true)), "☻");		// Better than the reference loses nothing.
+assert.strictEqual(loss_text(info_cost(white_infos[1], white_infos[0].scoreLead, false)), "100");
 
 assert.strictEqual(candidate_count_label(0), "Best only");
 assert.strictEqual(candidate_count_label(1), "Best + 1 move");

@@ -23,7 +23,7 @@ const colour_gradients = require("./colour_gradients");
 const eval_history = require("./eval_history");
 
 const {handicap_stones, moveinfo_filter, board_candidates, pad, new_2d_array, xy_to_s, float_to_hex_ff,
-	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html} = require("./utils");
+	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html, info_cost, loss_text} = require("./utils");
 
 // ------------------------------------------------------------------------------------------------
 
@@ -1352,6 +1352,7 @@ function mark_colour_from_state(state, dflt) {
 function string_from_info(info, node, type, flip, best) {
 
 	// best: the entry Delta is measured from, infos[0] of the list being drawn.
+	// Delta is the mover's points loss (utils.loss_text), so it never flips.
 	// Explored entries (explored.js) have no LCB, no share of this position's
 	// visits, and no engine rank when this position's search never reported
 	// them; those show "—".
@@ -1411,15 +1412,7 @@ function string_from_info(info, node, type, flip, best) {
 			if (typeof info.scoreLead !== "number" || typeof best.scoreLead !== "number") {		// See above.
 				return "??";						// Don't return "?" which is special...
 			}
-			val = info.scoreLead - best.scoreLead;
-			if (flip) {
-				val = -val;
-			}
-			text = val < 0 ? "-" : "+";
-			absl = Math.abs(val);
-			text += absl.toFixed(2);
-			if (text === "+0.00" || text === "-0.00") text = "0";
-			return text;
+			return loss_text(info_cost(info, best.scoreLead, node.get_board().active === "b"));
 		case "Visits":
 			if (info.visits > 9950) {
 				return (info.visits / 1000).toFixed(0) + "k";

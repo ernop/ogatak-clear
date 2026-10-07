@@ -137,6 +137,19 @@ exports.info_cost = function(info, best_lead, active_is_b) {
 	return Math.max(0, cost);
 };
 
+// A cost as the board and Next Move Options write it: hundredths of a point,
+// unsigned, so 0.67 points worse than best reads "67". A move that loses
+// nothing, to the hundredth, reads "☻" (the outline ☺ is too faint at label
+// size).
+
+exports.loss_text = function(cost) {
+	if (typeof cost !== "number") {
+		return "";
+	}
+	let hundredths = Math.round(cost * 100);
+	return hundredths === 0 ? "☻" : hundredths.toString();
+};
+
 exports.cost_threshold_label = function(n) {
 	if (typeof n !== "number" || n <= 0) {
 		return null;

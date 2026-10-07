@@ -37,7 +37,7 @@ const candidate_profile = require("./candidate_profile");
 const eval_history = require("./eval_history");
 const explored = require("./explored");
 const type_scale = require("./type_scale");
-const {info_cost, safe_html, board_candidates, options_table_infos} = require("./utils");
+const {info_cost, loss_text, safe_html, board_candidates, options_table_infos} = require("./utils");
 
 const SECTION_TITLES = {
 	quality:  "MOVE QUALITY",
@@ -972,7 +972,7 @@ let move_report_prototype = {
 			for (let i = 0; i < infos.length; i++) {
 
 				let info = infos[i];
-				let cost_str = costs[i] === null ? "" : costs[i].toFixed(2);
+				let cost_str = loss_text(costs[i]);
 
 				// Gradient colours are continuous data, so they can't be classes:
 				// the row carries data-colour, bind_row_colours() turns it into

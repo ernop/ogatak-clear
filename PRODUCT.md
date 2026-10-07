@@ -88,13 +88,23 @@ reference.
 6. **Next move options and values, ongoing** — the engine's current top
    candidates as a readable table: move, resulting score ("B+2.30"),
    winrate ("B 61%"), visits, and a "costs" column (points worse than the
-   top candidate, unsigned, per rule 2). Rows clickable to play the move.
-   Moves the user played and searched show that search's values (item 13,
-   "Explored moves").
+   top candidate, unsigned, per rule 2, in the loss notation below). Rows
+   clickable to play the move. Moves the user played and searched show
+   that search's values (item 13, "Explored moves").
    The on-board colored candidate circles are stock behavior, kept — but
-   the number shown on them is "Delta" (points vs the best available
-   move, 0 = best), NOT visits: the visit count is irrelevant as a
-   top-level item on the highlights (2026-08-11).
+   the number shown on them is "Delta" (points lost vs the best available
+   move), NOT visits: the visit count is irrelevant as a top-level item on
+   the highlights (2026-08-11).
+   Loss notation (2026-10-07): Delta and the costs column write a loss in
+   hundredths of a point, unsigned, with no decimal point: 0.67 points
+   worse than the best reads "67", 1.60 reads "160". A move that loses
+   nothing, to the hundredth, reads "☻", including a move that scores
+   better than the reference. The minus sign, leading zero, and decimal
+   point carried no information: a shown loss is never negative, and the
+   colour already says how bad it is, so a bigger number is simply worse.
+   The loss is always the mover's, so "Numbers from Black's view" does not
+   flip it. The filled ☻ rather than the outline ☺ because the outline
+   face is too faint at board label size.
    **Display → Candidate moves shown** chooses which circles appear. It
    offers two kinds of cutoff in one menu; exactly one item is checked.
    Points cutoffs never depend on how many engine visits a move
@@ -281,9 +291,9 @@ reference.
    - P's list keeps KataGo's order. An explored value replaces P's entry for
      the move in place; moves P's search never reported follow, most visits
      first.
-   - The reference (Delta 0, cost 0) stays P's best move, using its explored
-     value when it was explored too. An explored move that scores better
-     shows a positive Delta and costs 0, like any move better than the
+   - The reference (cost 0, shown as ☻) stays P's best move, using its
+     explored value when it was explored too. An explored move that scores
+     better also costs 0 and shows ☻, like any move better than the
      reference (rule 5).
    - Shown in: board candidates, drawn like any other candidate
      (2026-10-07). An explored move is a move like any other, and its

@@ -30,6 +30,8 @@ search's visits; moves that have since left the board are dashed. See the
 * **Every variation's next move**: Display → Show every variation's next
   move puts the next move of every line you've played from a position on the
   board and in Next Move Options, in either candidate mode.
+* **Shorter loss labels**: a candidate 0.67 points worse than the best reads
+  `67`; one that loses nothing reads ☻.
 * **Settings**: every setting on one page, with typed values, a find box,
   and the live board beside it. The visit limit per position accepts any
   number, and the page shows how long it takes at your engine's speed.
@@ -67,9 +69,11 @@ about 10 minutes at the engine's current 1,625 visits/s._
 
 ## Candidate moves on the board
 
-* Each circle is labelled with Delta: points worse than the best available
-  move from here (`0` = best), never a visit count. Being behind in the game
-  doesn't make the best available move look bad.
+* Each circle is labelled with its loss in hundredths of a point against the
+  best available move from here: `67` means 0.67 points worse, and ☻ means
+  nothing lost. Bigger is worse, and the colour says the same. It's never a
+  visit count. Being behind in the game doesn't make the best available move
+  look bad. Next Move Options' costs column uses the same numbers.
 * **Display → Candidate moves shown** chooses which circles appear:
   * **Points from best** (`≤ 0.30` … `≤ 8.00`, or All; default `≤ 0.30`)
     shows every move within that many points of best, regardless of visits.
