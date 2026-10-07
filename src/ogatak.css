@@ -686,6 +686,16 @@ table.mr_cands tr.mr_cand:hover {
 	background-color: #222222ff;
 }
 
+.mr_explored {
+	color: #e0b872ff;
+	font-weight: bold;
+}
+
+.mr_explored_note,
+.mr_explored_visits {
+	color: #ffffffff;
+}
+
 #mr_canvas_history {
 	cursor: default;
 }

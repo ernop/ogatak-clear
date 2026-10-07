@@ -397,6 +397,28 @@ let board_drawer_prototype = {
 		ctx.stroke();
 	},
 
+	frounded: function(x, y, fraction, colour) {
+		if (this.coordinates) x++;
+		let ctx = this.ctx;
+		let size = fraction * this.square_size;
+		ctx.fillStyle = colour;
+		ctx.beginPath();
+		ctx.roundRect(x * this.square_size + (this.square_size - size) / 2, y * this.square_size + (this.square_size - size) / 2, size, size, size * 0.22);
+		ctx.fill();
+	},
+
+	rounded: function(x, y, line_fraction, fraction, colour) {
+		if (this.coordinates) x++;
+		let ctx = this.ctx;
+		let line = line_fraction * this.square_size;
+		let size = fraction * this.square_size - line;
+		ctx.lineWidth = line;
+		ctx.strokeStyle = colour;
+		ctx.beginPath();
+		ctx.roundRect(x * this.square_size + (this.square_size - size) / 2, y * this.square_size + (this.square_size - size) / 2, size, size, size * 0.22);
+		ctx.stroke();
+	},
+
 	cross: function(x, y, line_fraction, fraction, colour) {
 		if (this.coordinates) x++;
 		let ctx = this.ctx;
@@ -687,12 +709,23 @@ let board_drawer_prototype = {
 
 				this.wood(x, y);
 
-				if (o.fill) {
-					this.fcircle(x, y, 1, o.fill);
-				}
+				// Explored moves (explored.js) are rounded squares, so the shape
+				// says whose search the numbers come from.
 
-				if (o.next_mark_colour) {
-					this.circle(x, y, 0.085, 1, o.next_mark_colour);
+				if (o.explored) {
+					if (o.fill) {
+						this.frounded(x, y, 0.94, o.fill);
+					}
+					if (o.next_mark_colour) {
+						this.rounded(x, y, 0.085, 0.94, o.next_mark_colour);
+					}
+				} else {
+					if (o.fill) {
+						this.fcircle(x, y, 1, o.fill);
+					}
+					if (o.next_mark_colour) {
+						this.circle(x, y, 0.085, 1, o.next_mark_colour);
+					}
 				}
 
 				if (o.text.length >= 3) {
@@ -973,6 +1006,7 @@ let board_drawer_prototype = {
 				type: "analysis",
 				text: [],
 				fill: null,
+				explored: Boolean(info.explored),
 			};
 
 			let colour;
@@ -996,7 +1030,7 @@ let board_drawer_prototype = {
 			}
 
 			for (let nt of number_types) {
-				let z = string_from_info(info, node, nt, needs_flip);
+				let z = string_from_info(info, node, nt, needs_flip, filtered_infos[0]);
 				if (z === "?") {
 					got_bad_analysis_text = true;
 				}
@@ -1221,7 +1255,9 @@ let board_drawer_prototype = {
 			visits: () => {
 				let visits = "";
 				if (node.has_valid_analysis()) {
-					visits = `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[0].visits} / ${node.analysis.rootInfo.visits}`;
+					visits = override_moveinfo && override_moveinfo.explored
+						? `${override_moveinfo.visits} explored`
+						: `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[0].visits} / ${node.analysis.rootInfo.visits}`;
 				}
 				let digits = String(Math.max(config.ponder_visits, config.autoanalysis_visits)).length;		// Room for "limit / limit".
 				return `<span class="info_item"><span class="info_label">${t.Visits}:</span> ` +
@@ -1312,7 +1348,12 @@ function mark_colour_from_state(state, dflt) {
 	return dflt;
 }
 
-function string_from_info(info, node, type, flip) {
+function string_from_info(info, node, type, flip, best) {
+
+	// best: the entry Delta is measured from, infos[0] of the list being drawn.
+	// Explored entries (explored.js) have no LCB, no share of this position's
+	// visits, and no engine rank when this position's search never reported
+	// them; those show "—".
 
 	let val;			// It seems using let inside a switch is dubious.
 	let text;
@@ -1328,6 +1369,9 @@ function string_from_info(info, node, type, flip) {
 			val = clamp(0, val, 99);
 			return val.toString();
 		case "LCB":
+			if (typeof info.lcb !== "number") {
+				return "—";
+			}
 			val = Math.round(info.lcb * 100);
 			if (flip) {
 				val = 100 - val;
@@ -1335,8 +1379,14 @@ function string_from_info(info, node, type, flip) {
 			val = clamp(0, val, 99);
 			return val.toString();
 		case "Visits (%)":
+			if (info.explored) {
+				return "—";
+			}
 			return Math.floor(info.visits / node.analysis.rootInfo.visits * 100).toString();
 		case "Policy":
+			if (typeof info.prior !== "number") {
+				return "—";
+			}
 			val = Math.round(info.prior * 1000);	// We want some integer between 0 and 1000.
 			val = clamp(0, val, 999);
 			text = val.toString();
@@ -1357,10 +1407,10 @@ function string_from_info(info, node, type, flip) {
 			text += absl.toFixed(2);
 			return text;
 		case "Delta":
-			if (typeof info.scoreLead !== "number" || typeof node.analysis.moveInfos[0].scoreLead !== "number") {		// See above.
+			if (typeof info.scoreLead !== "number" || typeof best.scoreLead !== "number") {		// See above.
 				return "??";						// Don't return "?" which is special...
 			}
-			val = info.scoreLead - node.analysis.moveInfos[0].scoreLead;
+			val = info.scoreLead - best.scoreLead;
 			if (flip) {
 				val = -val;
 			}
@@ -1377,6 +1427,9 @@ function string_from_info(info, node, type, flip) {
 			}
 			return info.visits.toString();
 		case "Order":
+			if (info.explored && !info.explored.own) {
+				return "—";
+			}
 			return info.order.toString();
 		default:
 			return "?";

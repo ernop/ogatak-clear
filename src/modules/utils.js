@@ -1,6 +1,7 @@
 "use strict";
 
 const querystring = require("querystring");
+const explored = require("./explored");
 const stringify = require("./stringify");
 
 // ------------------------------------------------------------------------------------------------
@@ -222,7 +223,8 @@ exports.select_candidates = function(infos, active_is_b, next_gtp, opts) {
 };
 
 // Count mode always includes the game's next move(s); cost mode only when
-// always_show_next_move_eval is on.
+// always_show_next_move_eval is on. Explored moves (explored.js) carry the
+// result of their own position's search.
 
 exports.board_candidates = function(node) {
 
@@ -233,7 +235,7 @@ exports.board_candidates = function(node) {
 	let count_mode = config.candidate_filter === "count";
 	let next_gtp = (count_mode || config.always_show_next_move_eval) ? exports.next_move_gtp_set(node) : null;
 
-	return exports.select_candidates(node.analysis.moveInfos, node.get_board().active === "b", next_gtp, {
+	return exports.select_candidates(explored.node_infos(node), node.get_board().active === "b", next_gtp, {
 		mode: config.candidate_filter,
 		threshold: config.cost_threshold,
 		count: config.candidate_count,

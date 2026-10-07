@@ -31,9 +31,12 @@ improving the comprehensibility of the AI data shown during game review.
   (`candidate_filter` / `cost_threshold` / `candidate_count` /
   `candidate_min_visits`, selected by `utils.select_candidates`), Display →
   Always show next-move eval (`always_show_next_move_eval`) in `utils.js` /
-  `board_drawer.js`, and `src/modules/eval_history.js` (per-search candidate
+  `board_drawer.js`, `src/modules/eval_history.js` (per-search candidate
   value history, recorded from `hub.receive_object`, drawn by the Move
-  Report's Eval history card).
+  Report's Eval history card), and `src/modules/explored.js` (explored
+  moves: a child's own search standing in for its parent's estimate of
+  that move; merged in by `utils.board_candidates`, Next Move Options, and
+  Eval history; requirements in `PRODUCT.md` item 13).
 
 ## Remotes
 
@@ -105,11 +108,23 @@ Sandbox practicalities:
   but never Electron's menu accelerators in the offscreen window. A
   menu-accelerator path (Esc, Left/Right siblings) can't be exercised
   that way.
+- Analysis displays can be checked without KataGo: build the position with
+  `hub.try_move()`, then give nodes analyses through
+  `node.receive_analysis(o)` with `o[ANALYSIS_CONTEXT_PROPERTY]` set from
+  `query.analysis_context(query.new_query(node, ...), identity)`, so
+  contexts are exactly what the engine would produce. With no engine
+  process, `engine_failure_spinner` redraws every 1.2 s and wipes hovers;
+  set `hub.engine.exe` to a stub with `stdin.write()` first.
+- KataGo runs with its working directory set to its own folder, so a
+  relative `logDir` in the analysis config writes there. A sandbox using
+  the user's engine should point `engineconfig` at a copy whose `logDir`
+  is under `/tmp`.
 
 Pure-logic tests run with plain Node: `node src/modules/utils.test.js`,
 `node src/modules/eval_history.test.js`,
-`node src/modules/candidate_profile.test.js`, and
-`node src/modules/settings_schema.test.js`.
+`node src/modules/candidate_profile.test.js`,
+`node src/modules/settings_schema.test.js`, and
+`node src/modules/explored.test.js`.
 
 ## UI conventions
 

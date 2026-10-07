@@ -89,6 +89,8 @@ reference.
    candidates as a readable table: move, resulting score ("B+2.30"),
    winrate ("B 61%"), visits, and a "costs" column (points worse than the
    top candidate, unsigned, per rule 2). Rows clickable to play the move.
+   Moves the user played and searched show that search's values (item 13,
+   "Explored moves").
    The on-board colored candidate circles are stock behavior, kept — but
    the number shown on them is "Delta" (points vs the best available
    move, 0 = best), NOT visits: the visit count is irrelevant as a
@@ -228,11 +230,12 @@ reference.
      line's colour lifted toward white so it stays legible.
    - Hovering a candidate on the board follows that move: its line is drawn
      thick on top with the rest faded, its value is labelled at each visits
-     tick ("after 10k visits it said…"), and the header gives the move (with
-     a "played" / "variation" tag when it is in the game record), its value
-     now, its change since the chart started (▲ better / ▼ worse for the
-     player to move), and its visits, noting when it is no longer on the
-     board.
+     tick ("after 10k visits it said…"), and the header gives the move, its
+     value now, a "played" / "variation" tag when it is in the game record,
+     its change since the chart started (▲ better / ▼ worse for the player
+     to move), and its visits, noting when it is no longer on the board.
+     The value comes straight after the move because a narrow card drops
+     the header's last pieces first (2026-10-07).
    - The table of moves under the chart (value now, worse-by, sparkline,
      change, visits) was removed on 2026-09-26: the chart carries every line,
      and hovering gives exact numbers.
@@ -245,6 +248,56 @@ reference.
      time apart, so an hour-long search keeps a few hundred; the newest
      sample is always the latest report. The 40 most recently used searches
      stay in memory; histories are not saved to SGF.
+13. **Explored moves** (2026-10-07) — at a position P, Ernest plays a move B
+   himself, lets KataGo search the position after B (say 1,000 visits), and
+   steps back. P must then show B at the value that search found. Before
+   this, P showed only its own search's estimate of B, often from a handful
+   of visits, or nothing at all when P's search never tried B.
+   - The search after B stands in for P's estimate of B when: B is a single
+     move by the side to move at P; both searches used the same KataGo
+     executable, analysis config, network, rules, komi, board size, and
+     override settings (values from different engines or rules are not
+     comparable); the search after B had no avoid / allow restriction; and
+     it has more visits than P's own search gave B, the same "more visits
+     wins" rule a node uses for its own analyses. Otherwise P's own entry
+     stands, and once P's search gives B more visits than the explored
+     search had, P's own value returns. The engine version is not compared:
+     it reads 1.0.0 until KataGo answers its version query, so a search
+     started in that moment would otherwise never match.
+   - An explored move takes that search's root result: score, winrate, and
+     visits. Its line of play is B followed by that search's best line, its
+     policy prior comes from P's search, and it carries that search's
+     ownership map (shown with per-move ownership on). It has no LCB.
+   - P's list keeps KataGo's order. An explored value replaces P's entry for
+     the move in place; moves P's search never reported follow, most visits
+     first.
+   - The reference (Delta 0, cost 0) stays P's best move, using its explored
+     value when it was explored too. An explored move that scores better
+     shows a positive Delta and costs 0, like any move better than the
+     reference (rule 5).
+   - Shown in: board candidates, drawn as rounded squares instead of
+     circles, so the shape says whose search the numbers come from;
+     hovering one shows its line of play, its score, and "Visits: N
+     explored" in the info bar. Labels: Delta, Score, Winrate, Visits, and
+     Policy as usual; LCB and Visits (%) show "—"; Order shows P's rank when
+     P's search ranked the move, otherwise "—". Next Move Options: the
+     visits cell says "explored", explored moves outside the top six are
+     listed after them, and a footnote explains the tag. Eval history: a
+     square just right of the current visits (its value is not a point in
+     P's search), linked by a dotted line to the move's own line when it has
+     one, otherwise labelled; following it gives "■ value", "explored", and
+     its visits.
+   - Still P's own search only: Play best move, the candidate distribution,
+     Width and the costs saved in the SGF (`OGWI` / `OGWC`), the stored score
+     and winrate (`OGSC` / `SBKV`), and Eval history's lines.
+   - Limits: explored values exist only while both analyses are in memory.
+     Analyses are not saved to the SGF, so reopening a file drops them. Only
+     P's direct children count; exploring further below B does not change
+     B's value at P.
+   - The presentation above (shapes, labels, header text, chart marker) is
+     a first pass, to be tuned separately once the data path is settled
+     (2026-10-07).
+   - Logic: `src/modules/explored.js`, tested by `explored.test.js`.
 
 ### Current-line semantics
 

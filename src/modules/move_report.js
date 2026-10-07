@@ -35,6 +35,7 @@ const config_io = require("./config_io");
 const colour_gradients = require("./colour_gradients");
 const candidate_profile = require("./candidate_profile");
 const eval_history = require("./eval_history");
+const explored = require("./explored");
 const type_scale = require("./type_scale");
 const {info_cost, safe_html, board_candidates} = require("./utils");
 
@@ -954,10 +955,13 @@ let move_report_prototype = {
 			// Costs are vs the best AVAILABLE move (infos[0]), never vs the
 			// global board value: if we're losing badly, the best we can do
 			// from here is the reference point (PRODUCT.md rule 5)...
+			// Explored moves outside the top 6 are listed after it.
 
-			let candidates = this.candidate_costs(node, 6);
-			let infos = candidates.map(candidate => candidate.info);
-			let costs = candidates.map(candidate => candidate.cost);
+			let all = explored.node_infos(node);
+			let best_lead = all[0].scoreLead;
+			let active_is_b = node.get_board().active === "b";
+			let infos = all.slice(0, 6).concat(all.slice(6).filter(info => info.explored));
+			let costs = infos.map(info => info_cost(info, best_lead, active_is_b));
 
 			// Gradient cap: worst displayed cost, floored at 2 pts so near-equal
 			// options stay near-equal in color (PRODUCT.md rule 6)...
@@ -977,6 +981,9 @@ let move_report_prototype = {
 				// --val-colour, and the .mr_val rule consumes it.
 
 				let val_bind = costs[i] === null ? "" : ` data-colour="${this.value_colour(costs[i], cap)}"`;
+				let visits_html = info.explored
+					? `<td class="mr_explored_visits">${this.fmt_visits(info.visits)} <span class="mr_explored">explored</span></td>`
+					: `<td class="mr_dim">${this.fmt_visits(info.visits)}</td>`;
 
 				parts.push(
 					`<tr class="mr_cand" data-gtp="${info.move}"${val_bind}>` +
@@ -984,13 +991,16 @@ let move_report_prototype = {
 					`<td>${this.fmt_score(info.scoreLead)}</td>` +
 					`<td>${this.fmt_winrate(info.winrate)}</td>` +
 					`<td class="mr_val">${cost_str}</td>` +
-					`<td class="mr_dim">${this.fmt_visits(info.visits)}</td>` +
+					visits_html +
 					`</tr>`
 				);
 			}
 
 			parts.push(`</table>`);
 			parts.push(`<div class="mr_dim mr_small">total visits: ${this.fmt_visits(node.analysis.rootInfo.visits)} — click a row to play it</div>`);
+			if (infos.some(info => info.explored)) {
+				parts.push(`<div class="mr_small mr_explored_note"><span class="mr_explored">explored</span>: score, win and visits come from searching the position after that move</div>`);
+			}
 
 		} else if (hub.engine.desired) {
 			parts.push(`<div class="mr_quality mr_dim">analysing...</div>`);
@@ -2073,8 +2083,13 @@ let move_report_prototype = {
 		let on_board = new Set(candidates.infos.map(info => info.move));
 		eval_history.note_shown(search_id, on_board, node.analysis.rootInfo.visits);
 
+		// Lines plot this search's own values; colours match the board, which
+		// shows explored moves at their own search's value (explored.js).
+
+		let merged = explored.node_infos(node);
 		let infos = new Map(node.analysis.moveInfos.map(info => [info.move, info]));
-		let best_lead = node.analysis.moveInfos[0].scoreLead;
+		let shown_infos = new Map(merged.map(info => [info.move, info]));
+		let best_lead = merged[0].scoreLead;
 
 		let tags = Object.create(null);
 		node.children.forEach((child, i) => {
@@ -2093,7 +2108,8 @@ let move_report_prototype = {
 
 		let lines = [...search.shown].map(move => {
 			let info = infos.get(move) || null;
-			let cost = info ? info_cost(info, best_lead, sign > 0) : null;
+			let shown_info = shown_infos.get(move) || null;
+			let cost = shown_info ? info_cost(shown_info, best_lead, sign > 0) : null;
 			let now = info && typeof info.scoreLead === "number" ? sign * info.scoreLead : null;
 			let points = eval_history.points(search, move, HISTORY_START_VISITS, config.candidate_min_visits)
 				.map(p => ({x: p.root, v: sign * p.lead}));
@@ -2111,8 +2127,22 @@ let move_report_prototype = {
 		let cost_key = (line) => line.cost === null ? Infinity : line.cost;
 		lines.sort((a, b) => (Number(b.on_board) - Number(a.on_board)) || (cost_key(a) - cost_key(b)));
 
+		let explored_marks = merged.filter(info => {
+			return info.explored && on_board.has(info.move) && typeof info.scoreLead === "number";
+		}).map(info => {
+			let cost = info_cost(info, best_lead, sign > 0);
+			return {
+				move: info.move,
+				lead: info.scoreLead,
+				v: sign * info.scoreLead,
+				visits: info.visits,
+				colour: this.value_colour(cost === null ? candidates.scale : cost, candidates.scale),
+			};
+		});
+
 		return {
 			lines,
+			explored: explored_marks,
 			sign,
 			side: sign > 0 ? "Black" : "White",
 			t_now: search.times[search.times.length - 1],
@@ -2182,6 +2212,9 @@ let move_report_prototype = {
 
 		let drawable = data ? data.lines.filter(line => line.points.length > 0) : [];
 		let focus_line = focus ? drawable.find(line => line.move === focus) || null : null;
+		let explored_marks = data ? data.explored : [];
+		let focus_mark = focus ? explored_marks.find(mark => mark.move === focus) || null : null;
+		let following = Boolean(focus_line || focus_mark);
 		let lines = drawable.slice(0, HISTORY_LINES);
 		for (let extra of [focus_line, ...drawable.filter(line => line.tag)]) {
 			if (extra && !lines.includes(extra)) {
@@ -2203,14 +2236,25 @@ let move_report_prototype = {
 			right_edge -= ctx.measureText(search_text).width + 16;
 		}
 
+		// Pieces are dropped from the end when the card is narrow, so the value
+		// comes straight after the move.
+
 		let pieces = [];
-		if (focus_line) {
-			pieces.push([focus_line.move, "body", "bold", this.label_colour(focus_line.colour)]);
-			if (focus_line.tag) {
-				pieces.push([focus_line.tag, "ui", "bold", "#e0b872ff"]);
+		if (focus_mark) {
+			pieces.push([focus_mark.move, "body", "bold", this.label_colour(focus_mark.colour)]);
+			pieces.push([`■ ${this.fmt_score(focus_mark.lead)}`, "body", "bold", "#ffffffff"]);
+			pieces.push(["explored", "ui", "bold", "#e0b872ff"]);
+			pieces.push([`${this.fmt_visits(focus_mark.visits)} visits`, "ui", "", "#ffffffff"]);
+			if (focus_line && focus_line.info) {
+				pieces.push([`this search: ${this.fmt_score(focus_line.info.scoreLead)} on ${this.fmt_visits(focus_line.info.visits)}`, "ui", "", "#ffffffff"]);
 			}
+		} else if (focus_line) {
+			pieces.push([focus_line.move, "body", "bold", this.label_colour(focus_line.colour)]);
 			if (focus_line.info) {
 				pieces.push([this.fmt_score(focus_line.info.scoreLead), "body", "bold", "#ffffffff"]);
+			}
+			if (focus_line.tag) {
+				pieces.push([focus_line.tag, "ui", "bold", "#e0b872ff"]);
 			}
 			let change = this.fmt_change(focus_line.change);
 			if (change) {
@@ -2248,7 +2292,8 @@ let move_report_prototype = {
 			return;
 		}
 
-		// Scales. The value range covers every line, at least one point tall.
+		// Scales. The value range covers every line and explored move, at least
+		// one point tall.
 
 		let xs = this.history_x_scale(data.root_visits, x0, x1);
 		let v_lo = Infinity;
@@ -2258,6 +2303,10 @@ let move_report_prototype = {
 				v_lo = Math.min(v_lo, p.v);
 				v_hi = Math.max(v_hi, p.v);
 			}
+		}
+		for (let mark of explored_marks) {
+			v_lo = Math.min(v_lo, mark.v);
+			v_hi = Math.max(v_hi, mark.v);
 		}
 		if (v_hi - v_lo < 1) {
 			let mid = (v_hi + v_lo) / 2;
@@ -2316,6 +2365,9 @@ let move_report_prototype = {
 		if (lines.some(line => !line.on_board)) {
 			notes.push("dashed: no longer on the board");
 		}
+		if (explored_marks.length > 0) {
+			notes.push("■ explored: search after the move");
+		}
 		ctx.font = type_scale.canvas_font("caption");
 		let note_boxes = notes.map((text, i) => {
 			let ny = y0 + 3 + i * (cap + 3);
@@ -2361,12 +2413,48 @@ let move_report_prototype = {
 
 		for (let line of lines) {
 			if (line !== focus_line) {
-				stroke_line(line, line.on_board ? 2 : 1.5, focus_line ? 0.3 : line.on_board ? 1 : 0.6);
+				stroke_line(line, line.on_board ? 2 : 1.5, following ? 0.3 : line.on_board ? 1 : 0.6);
 			}
 		}
 		if (focus_line) {
 			stroke_line(focus_line, 4, 1);
 		}
+
+		// Explored moves: their own search's value, as a square (their board
+		// shape) just right of the current visits, since it is not a point in
+		// this search. A move that also has a line gets a dotted link from that
+		// line's end instead of a second label.
+
+		let x_explored = xs.x_of(data.root_visits) + cap * 0.6 + 6;
+		let squares = explored_marks.map(mark => {
+			let r = mark === focus_mark ? cap * 0.6 : cap * 0.45;
+			let y = y_of(mark.v);
+			let line = lines.find(l => l.move === mark.move);
+			return {mark, x: x_explored, y, r, end: line ? geometry.get(line) : null};
+		});
+		for (let d of squares) {
+			ctx.globalAlpha = !following || d.mark === focus_mark ? 1 : 0.3;
+			if (d.end) {
+				ctx.strokeStyle = d.mark.colour;
+				ctx.lineWidth = d.mark === focus_mark ? 2.5 : 2;
+				ctx.setLineDash([3, 3]);
+				ctx.beginPath();
+				ctx.moveTo(d.end.px[d.end.px.length - 1], d.end.py[d.end.py.length - 1]);
+				ctx.lineTo(d.x, d.y);
+				ctx.stroke();
+				ctx.setLineDash([]);
+			}
+			ctx.beginPath();
+			ctx.roundRect(d.x - d.r, d.y - d.r, 2 * d.r, 2 * d.r, d.r * 0.4);
+			ctx.fillStyle = d.mark.colour;
+			ctx.fill();
+			ctx.lineWidth = 1.5;
+			ctx.strokeStyle = "#ffffffff";
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+			obstacles.push({x0: d.x - d.r - 1, y0: d.y - d.r - 1, x1: d.x + d.r + 1, y1: d.y + d.r + 1});
+		}
+		let unlabelled = squares.filter(d => !d.end);
 
 		// "After 10k visits it said...": the followed move's value at each tick.
 
@@ -2413,14 +2501,35 @@ let move_report_prototype = {
 		ctx.font = type_scale.canvas_font("caption", "bold");
 		let order = focus_line ? [focus_line, ...lines.filter(line => line !== focus_line)] : lines;
 		let specs = order.map(line => Object.assign({w: ctx.measureText(line.move).width + 8, h: cap + 4}, geometry.get(line)));
-		let placements = eval_history.place_line_labels(specs, obstacles, {x0: x0 + 1, y0: y0 + 1, x1: canvas.width - 1, y1: y1 - 1});
+		let mark_specs = unlabelled.map(d => ({w: ctx.measureText(d.mark.move).width + 8, h: cap + 4, px: [d.x + d.r], py: [d.y]}));
+		let placements = eval_history.place_line_labels(specs.concat(mark_specs), obstacles, {x0: x0 + 1, y0: y0 + 1, x1: canvas.width - 1, y1: y1 - 1});
 
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
+		unlabelled.forEach((d, k) => {
+			let p = placements[order.length + k];
+			let spec = mark_specs[k];
+			ctx.globalAlpha = !following || d.mark === focus_mark ? 1 : 0.55;
+			if (p.kind !== "end") {
+				ctx.fillStyle = "#181818e6";
+				ctx.fillRect(p.x - spec.w / 2, p.y - spec.h / 2, spec.w, spec.h);
+			}
+			if (p.kind === "leader") {
+				ctx.strokeStyle = d.mark.colour;
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.moveTo(spec.px[0], spec.py[0]);
+				ctx.lineTo(p.x - spec.w / 2, p.y);
+				ctx.stroke();
+			}
+			ctx.fillStyle = this.label_colour(d.mark.colour);
+			ctx.fillText(d.mark.move, p.x, p.y);
+			ctx.globalAlpha = 1;
+		});
 		order.forEach((line, i) => {
 			let p = placements[i];
 			let spec = specs[i];
-			ctx.globalAlpha = line === focus_line ? 1 : focus_line ? 0.55 : line.on_board ? 1 : 0.75;
+			ctx.globalAlpha = line === focus_line ? 1 : following ? 0.55 : line.on_board ? 1 : 0.75;
 			if (p.kind !== "end") {
 				ctx.fillStyle = "#181818e6";
 				ctx.fillRect(p.x - spec.w / 2, p.y - spec.h / 2, spec.w, spec.h);

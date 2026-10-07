@@ -24,6 +24,9 @@ search's visits; moves that have since left the board are dashed. See the
 
 ## Recent additions
 
+* **Explored moves**: play a move yourself, let KataGo search it, and step
+  back. The move now shows the value that search found, marked "explored",
+  even when the position's own search barely looked at it or never did.
 * **Settings**: every setting on one page, with typed values, a find box,
   and the live board beside it. The visit limit per position accepts any
   number, and the page shows how long it takes at your engine's speed.
@@ -79,6 +82,10 @@ about 10 minutes at the engine's current 1,625 visits/s._
   **Display → Gradient**. With a points cutoff, the cutoff is the scale; with
   All or Best + N, the scale runs to the worst move shown, the played move
   included, so a clearly worse move never shares a colour with a better one.
+* A move you played and searched yourself is drawn as a rounded square
+  carrying that search's value, once it has more visits than the current
+  position's search gave the move. Next Move Options marks it "explored".
+  The rules are in [PRODUCT.md](PRODUCT.md), "Explored moves".
 
 ## Eval history
 
@@ -193,7 +200,7 @@ the current candidate distribution, and directly comparable next moves._
 * Download and unpack KataGo and a KataGo weights file.
 * In Ogatak, select the menu item `Setup` `-->` `Locate KataGo...` (and locate the KataGo executable)
 * In Ogatak, select the menu item `Setup` `-->` `Choose network...` (and locate the weights file)
-* The pure-logic tests run with plain Node: `node src/modules/utils.test.js`, `node src/modules/eval_history.test.js`, `node src/modules/candidate_profile.test.js`, and `node src/modules/settings_schema.test.js`.
+* The pure-logic tests run with plain Node: `node src/modules/utils.test.js`, `node src/modules/eval_history.test.js`, `node src/modules/candidate_profile.test.js`, `node src/modules/settings_schema.test.js`, and `node src/modules/explored.test.js`.
 
 ## Performance tips
 
