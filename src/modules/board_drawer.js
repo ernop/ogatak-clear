@@ -21,10 +21,12 @@ const {translate} = require("./translate");
 
 const colour_gradients = require("./colour_gradients");
 const eval_history = require("./eval_history");
-const {inherited_root} = require("./explored");
+const {inherited_root, node_infos} = require("./explored");
 
 const {handicap_stones, moveinfo_filter, board_candidates, pad, new_2d_array, xy_to_s, float_to_hex_ff,
-	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html, info_cost, loss_text} = require("./utils");
+	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html, info_cost, loss_text, ZERO_LOSS} = require("./utils");
+
+const ZERO_LOSS_BLUE = "#2f7cf6ff";			// Same blue as .mr_zero_loss in ogatak.css.
 
 // ------------------------------------------------------------------------------------------------
 
@@ -462,7 +464,7 @@ let board_drawer_prototype = {
 		ctx.fillStyle = colour;
 		let gx = x * this.square_size + (this.square_size / 2);
 		let gy = y * this.square_size + (this.square_size / 2);
-		ctx.fillText(msg, gx, gy + 2);
+		this.fill_label(msg, gx, gy + 2);
 	},
 
 	text_two: function(x, y, msg, msg2, colour) {
@@ -474,9 +476,9 @@ let board_drawer_prototype = {
 		ctx.fillStyle = colour;
 		let gx = x * this.square_size + (this.square_size / 2);
 		let gy = y * this.square_size + (this.square_size / 3) - 0.5;
-		ctx.fillText(msg, gx, gy + 1);
+		this.fill_label(msg, gx, gy + 1);
 		gy = y * this.square_size + (this.square_size * 2 / 3) + 0.5;
-		ctx.fillText(msg2, gx, gy + 1);
+		this.fill_label(msg2, gx, gy + 1);
 	},
 
 	text_three: function(x, y, msg, msg2, msg3, colour) {
@@ -490,11 +492,42 @@ let board_drawer_prototype = {
 		let gy;
 
 		gy = y * this.square_size + (this.square_size * 0.22);
-		ctx.fillText(msg, gx, gy);
+		this.fill_label(msg, gx, gy);
 		gy = y * this.square_size + (this.square_size * 0.5);
-		ctx.fillText(msg2, gx, gy + 1);
+		this.fill_label(msg2, gx, gy + 1);
 		gy = y * this.square_size + (this.square_size * 0.78);
-		ctx.fillText(msg3, gx, gy + 1);
+		this.fill_label(msg3, gx, gy + 1);
+	},
+
+	// One line of a label, centred on gx, gy in the current font. ZERO_LOSS is
+	// drawn as a star path, so it looks the same whatever fonts are installed,
+	// in blue with a white rim to stand out from the numbers on any candidate
+	// colour.
+
+	fill_label: function(msg, gx, gy) {
+		let ctx = this.ctx;
+		if (msg !== ZERO_LOSS) {
+			ctx.fillText(msg, gx, gy);
+			return;
+		}
+		let size = parseFloat(/([\d.]+)px/.exec(ctx.font)[1]);
+		let r = size * 0.6;
+		let cy = gy + r * 0.1;							// Centres the star's box, not its circumcentre, on the line.
+		ctx.save();
+		ctx.beginPath();
+		for (let i = 0; i < 10; i++) {
+			let a = -Math.PI / 2 + i * Math.PI / 5;
+			let rr = i % 2 === 0 ? r : r * 0.46;
+			ctx.lineTo(gx + rr * Math.cos(a), cy + rr * Math.sin(a));
+		}
+		ctx.closePath();
+		ctx.lineJoin = "round";
+		ctx.lineWidth = Math.max(1.5, size * 0.14);
+		ctx.strokeStyle = "#ffffffff";
+		ctx.stroke();
+		ctx.fillStyle = ZERO_LOSS_BLUE;
+		ctx.fill();
+		ctx.restore();
 	},
 
 	// --------------------------------------------------------------------------------------------
@@ -592,7 +625,10 @@ let board_drawer_prototype = {
 		this.draw_count++;
 	},
 
-	draw_pv: function(node, point) {					// Returns true / false indicating whether this happened.
+	draw_pv: function(node, point, any_move = false) {	// Returns true / false indicating whether this happened.
+
+		// any_move: the move need not be on the board now, just reported (the
+		// Move Report's eval history keeps lines for moves that have left it).
 
 		if (config.editing || !point || !config.candidate_moves || !config.mouseover_pv || !node.has_valid_analysis()) {
 			return false;
@@ -611,7 +647,7 @@ let board_drawer_prototype = {
 
 		let info;
 
-		for (let foo of moveinfo_filter(node)) {		// Of all the moves in our list, is one of them the one we're interested in?
+		for (let foo of any_move ? node_infos(node) : moveinfo_filter(node)) {		// Of all the moves in our list, is one of them the one we're interested in?
 			if (foo.move === gtp) {
 				if (Array.isArray(foo.pv) && foo.pv.length > 0) {
 					info = foo;
@@ -1407,7 +1443,7 @@ function string_from_info(info, node, type, flip, best) {
 			if (typeof info.scoreLead !== "number" || typeof best.scoreLead !== "number") {		// See above.
 				return "??";						// Don't return "?" which is special...
 			}
-			return loss_text(info_cost(info, best.scoreLead, node.get_board().active === "b"));
+			return loss_text(info_cost(info, best.scoreLead, node.get_board().active === "b"), config.basis_point_display, true);
 		case "Visits":
 			if (info.visits > 9950) {
 				return (info.visits / 1000).toFixed(0) + "k";

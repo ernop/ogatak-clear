@@ -114,6 +114,7 @@ translations[`English`] = {
 		MENU_CANDIDATE_FILTER: `Candidate moves shown`,
 		MENU_ALWAYS_SHOW_NEXT_MOVE_EVAL: `Show every variation's next move`,
 		MENU_MARK_EXPLORED_MOVES: `Mark explored moves`,
+		MENU_BASIS_POINT_DISPLAY: `Use basis point display`,
 		MENU_GRADIENT: `Gradient`,
 		MENU_NUMBERS: `Numbers`,
 			MENU_NUM_WINRATE: `Winrate`,

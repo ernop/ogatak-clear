@@ -137,17 +137,27 @@ exports.info_cost = function(info, best_lead, active_is_b) {
 	return Math.max(0, cost);
 };
 
-// A cost as the board and Next Move Options write it: hundredths of a point,
-// unsigned, so 0.67 points worse than best reads "67". A move that loses
-// nothing, to the hundredth, reads "☻" (the outline ☺ is too faint at label
-// size).
+// A cost as the board (Delta) and Next Move Options write it. Conventionally in
+// points: "-0.67" on the board (signed), "0.67" in the costs column, whose
+// heading already says loss. With basis point display (config), hundredths of
+// a point, unsigned: "67". Either way a move that loses nothing to the
+// hundredth, including one scoring better than the reference, is ZERO_LOSS,
+// which the board draws as a blue star rather than this character.
 
-exports.loss_text = function(cost) {
+exports.ZERO_LOSS = "★";
+
+exports.loss_text = function(cost, basis = false, signed = false) {
 	if (typeof cost !== "number") {
 		return "";
 	}
 	let hundredths = Math.round(cost * 100);
-	return hundredths === 0 ? "☻" : hundredths.toString();
+	if (hundredths <= 0) {
+		return exports.ZERO_LOSS;
+	}
+	if (basis) {
+		return hundredths.toString();
+	}
+	return (signed ? "-" : "") + (hundredths / 100).toFixed(2);
 };
 
 exports.cost_threshold_label = function(n) {

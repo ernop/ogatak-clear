@@ -1409,6 +1409,14 @@ function menu_build() {
 					}
 				},
 				{
+					label: translate("MENU_BASIS_POINT_DISPLAY"),
+					type: "checkbox",
+					checked: config.basis_point_display,
+					click: () => {
+						win.webContents.send("toggle", "basis_point_display");
+					}
+				},
+				{
 					label: translate("MENU_NUMBERS"),
 					submenu: [
 						{

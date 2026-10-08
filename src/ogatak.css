@@ -548,6 +548,15 @@ body.row_dragging, body.row_dragging * {
 	letter-spacing: 0;
 }
 
+.mr_secstatus {
+	color: #ffffffff;
+	font-weight: bold;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0;
+	margin: 0 auto 0 1em;
+	white-space: nowrap;
+}
+
 .mr_chartcanvas {
 	display: block;
 	cursor: pointer;
@@ -620,6 +629,12 @@ body.row_dragging, body.row_dragging * {
 
 .mr_val {
 	color: var(--val-colour, inherit);
+}
+
+.mr_zero_loss {
+	color: #2f7cf6ff;			/* Same blue as ZERO_LOSS_BLUE in board_drawer.js. */
+	font-size: var(--fs-emph);	/* A star glyph reads smaller than digits at the same size. */
+	line-height: 1;
 }
 
 .mr_verdict {

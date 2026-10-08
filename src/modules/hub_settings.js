@@ -45,6 +45,7 @@ const togglechecks = {
 	stone_counts:			[translate("MENU_DISPLAY"), translate("MENU_STONE_COUNTS")],
 	always_show_next_move_eval: [translate("MENU_DISPLAY"), translate("MENU_ALWAYS_SHOW_NEXT_MOVE_EVAL")],
 	mark_explored_moves:	[translate("MENU_DISPLAY"), translate("MENU_MARK_EXPLORED_MOVES")],
+	basis_point_display:	[translate("MENU_DISPLAY"), translate("MENU_BASIS_POINT_DISPLAY")],
 	candidate_moves:		[translate("MENU_DISPLAY"), translate("MENU_CANDIDATE_MOVES")],
 	no_ponder_no_candidates:[translate("MENU_DISPLAY"), translate("MENU_NO_PONDER_NO_CANDIDATES")],
 	mouseover_pv:			[translate("MENU_DISPLAY"), translate("MENU_WITH_PV_MOUSEOVER")],
@@ -196,6 +197,7 @@ module.exports = {
 			break;
 
 		case "always_show_next_move_eval":			// Also decides Next Move Options' rows.
+		case "basis_point_display":					// Also writes its costs column.
 
 			this.draw();
 			move_report.draw(this.node);

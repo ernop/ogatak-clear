@@ -161,6 +161,8 @@ exports.groups = [
 			{type: "toggle", key: "always_show_next_move_eval", label: "Show every variation's next move",
 				find: "next move eval played game tree subtree continuation options table"},
 			{type: "toggle", key: "mark_explored_moves", label: "Mark explored moves", find: "explored searched rounded square shape"},
+			{type: "toggle", key: "basis_point_display", label: "Use basis point display",
+				find: "loss cost delta hundredths points decimal star"},
 			{type: "select", key: "numbers", label: "Numbers on candidates", options: number_type_options, find: "delta winrate score visits"},
 			{type: "select", key: "candidate_gradient", label: "Colour gradient", options: gradient_options, find: "palette colours"},
 			{type: "select", label: "Classic colour pair", options: colour_pair_options, get: current_colour_pair,
@@ -222,7 +224,7 @@ exports.groups = [
 		rows: [
 			// Width and chart height use the same limits as the panel's own −/+ controls (LIMITS in move_report.js).
 			{type: "number", key: "move_report_width", label: "Card width", unit: "px", integer: true, min: 320, max: 1280, step: 40},
-			{type: "number", key: "move_report_chart_height", label: "Chart height", unit: "px", integer: true, min: 90, max: 400, step: 20},
+			{type: "number", key: "move_report_chart_height", label: "Chart height", unit: "px", integer: true, min: 90, max: 4000, step: 20},
 			{type: "select", key: "move_report_breadth_view", label: "Breadth view", options_from: "mr_breadth_view"},
 			{type: "number", key: "move_report_distribution_top_n", label: "Candidate values: top N", integer: true, min: 0, max: 1000,
 				zero_label: "all", presets: [0, 5, 10, 20, 50, 100], find: "distribution"},

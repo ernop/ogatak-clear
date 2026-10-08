@@ -77,6 +77,10 @@ eval_history.record(null, 0);
 assert.deepStrictEqual(eval_history.visit_ticks(1000, 45000, true), [1000, 2000, 5000, 10000, 20000]);
 assert.deepStrictEqual(eval_history.visit_ticks(1000, 3e6, true).slice(-3), [5e5, 1e6, 2e6]);
 assert.deepStrictEqual(eval_history.visit_ticks(0, 45000, false), [0, 10000, 20000, 30000, 40000]);
+assert.deepStrictEqual(eval_history.visit_ticks(0, 1e7, false), [0, 2e6, 4e6, 6e6, 8e6, 1e7]);
+assert.deepStrictEqual(eval_history.visit_ticks(0, 1e7, false, 11), [0, 1e6, 2e6, 3e6, 4e6, 5e6, 6e6, 7e6, 8e6, 9e6, 1e7]);	// A wider chart takes more.
+assert.deepStrictEqual(eval_history.visit_ticks(1000, 45000, true, 11), [1000, 2000, 3000, 5000, 7000, 10000, 20000, 30000]);
+assert.deepStrictEqual(eval_history.visit_ticks(1000, 1e7, true, 11).slice(0, 4), [1000, 2000, 5000, 10000]);			// Four decades: 1, 2, 5 still.
 assert.strictEqual(eval_history.fmt_count(950), "950");
 assert.strictEqual(eval_history.fmt_count(1500), "1.5k");
 assert.strictEqual(eval_history.fmt_count(20000), "20k");
@@ -85,6 +89,21 @@ assert.strictEqual(eval_history.fmt_time(20), "20s");
 assert.strictEqual(eval_history.fmt_time(120), "2m");
 assert.strictEqual(eval_history.fmt_time(150), "2m30s");
 assert.strictEqual(eval_history.fmt_time(5400), "1h30m");
+
+// A move's rank by visits at each sample, and when it was first searched.
+
+eval_history.reset();
+eval_history.record(report("node_3:1", 500, [["D4", 1, 300], ["Q16", 0.5, 200]]), 0);
+eval_history.record(report("node_3:1", 2000, [["D4", 1, 1200], ["Q16", 0.5, 700], ["C6", 2, 100]]), 10000);
+eval_history.record(report("node_3:1", 9000, [["D4", 1, 4000], ["Q16", 0.5, 2000], ["C6", 2, 3000]]), 20000);
+let late = eval_history.get("node_3:1");
+assert.deepStrictEqual(eval_history.visit_ranks(late, "C6"), [{root: 2000, rank: 3}, {root: 9000, rank: 2}]);
+assert.deepStrictEqual(eval_history.visit_ranks(late, "Q16").map(r => r.rank), [2, 2, 3]);
+assert.deepStrictEqual(eval_history.visit_ranks(late, "Q16", 1000).map(r => r.root), [2000, 9000]);
+assert.deepStrictEqual(eval_history.visit_ranks(late, "K10"), []);
+assert.strictEqual(eval_history.first_seen(late, "C6"), 2000);
+assert.strictEqual(eval_history.first_seen(late, "D4"), 500);
+assert.strictEqual(eval_history.first_seen(late, "K10"), null);
 
 // Every line gets a label, and no two labels (or a label and an obstacle) overlap.
 

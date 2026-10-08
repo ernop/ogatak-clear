@@ -121,11 +121,52 @@ exports.value_at = function(points, x) {
 	return ret;
 };
 
-exports.visit_ticks = function(lo, hi, log) {
+// A move's rank by visits among every move the search reported, at each sample
+// from min_root root visits on. KataGo's own order is mostly by visits.
+
+exports.visit_ranks = function(search, move, min_root = 0) {
+	let m = search.moves.get(move);
+	if (!m) {
+		return [];
+	}
+	let mine = new Map();
+	for (let j = 0; j < m.k.length; j++) {
+		if (search.roots[m.k[j]] >= min_root) {
+			mine.set(m.k[j], {root: search.roots[m.k[j]], visits: m.visits[j], rank: 1});
+		}
+	}
+	for (let [other, o] of search.moves) {
+		if (other === move) {
+			continue;
+		}
+		for (let j = 0; j < o.k.length; j++) {
+			let r = mine.get(o.k[j]);
+			if (r && o.visits[j] > r.visits) {
+				r.rank++;
+			}
+		}
+	}
+	return [...mine.values()].map(r => ({root: r.root, rank: r.rank}));
+};
+
+// The search's root visits at the first sample reporting the move at all
+// (KataGo reports every move with a visit), or null.
+
+exports.first_seen = function(search, move) {
+	let m = search.moves.get(move);
+	return m && m.k.length > 0 ? search.roots[m.k[0]] : null;
+};
+
+// About max_ticks ticks, at round numbers; on a log axis 1, 2, 5 per decade,
+// or 1, 2, 3, 5, 7 when there is room for that many.
+
+exports.visit_ticks = function(lo, hi, log, max_ticks = 6) {
 	let ret = [];
 	if (log) {
+		let decades = Math.log10(hi / Math.max(1, lo));
+		let mults = max_ticks / Math.max(1, decades) >= 5 ? [1, 2, 3, 5, 7] : [1, 2, 5];
 		for (let decade = 1; decade <= hi; decade *= 10) {
-			for (let m of [1, 2, 5]) {
+			for (let m of mults) {
 				let n = decade * m;
 				if (n >= lo && n <= hi) {
 					ret.push(n);
@@ -138,7 +179,7 @@ exports.visit_ticks = function(lo, hi, log) {
 	for (let decade = 1; decade <= hi; decade *= 10) {
 		steps.push(decade, decade * 2, decade * 5);
 	}
-	let step = steps.find(s => hi / s <= 6) || Math.max(1, hi);
+	let step = steps.find(s => hi / s <= max_ticks) || Math.max(1, hi);
 	for (let n = Math.ceil(lo / step) * step; n <= hi; n += step) {
 		ret.push(n);
 	}

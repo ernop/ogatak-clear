@@ -33,9 +33,15 @@ improving the comprehensibility of the AI data shown during game review.
   Show every variation's next move (`always_show_next_move_eval`, the key
   kept from its earlier name "Always show next-move eval";
   `utils.board_candidates` and `utils.options_table_infos`), Display → Mark explored moves
-  (`mark_explored_moves`, `board_drawer.js`), `src/modules/eval_history.js`
+  (`mark_explored_moves`, `board_drawer.js`), Display → Use basis point
+  display (`basis_point_display`; loss text from `utils.loss_text`, whose
+  `ZERO_LOSS` star `board_drawer.fill_label` draws as a shape),
+  `src/modules/eval_history.js`
   (per-search candidate value history, recorded from `hub.receive_object`,
-  drawn by the Move Report's Eval history card), and
+  drawn by the Move Report's Eval history card; hovering or pinning a
+  line's label shows that move's PV on the board through
+  `hub.show_chart_point` / `hub.chart_point`, which `hub.draw` uses when
+  the mouse is off the board), and
   `src/modules/explored.js` (explored moves: a child's own search standing
   in for its parent's estimate of that move; merged in by
   `utils.board_candidates`, Next Move Options, and Eval history;

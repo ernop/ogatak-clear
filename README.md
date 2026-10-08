@@ -24,6 +24,10 @@ search's visits; moves that have since left the board are dashed. See the
 
 ## Recent additions
 
+* **Eval history labels you can hover and pin**: hover a line's label to see
+  that move's continuation on the board, as if you'd hovered the move itself;
+  click to pin it. A band across the top gives the move's visits, policy, and
+  how its rank by visits changed. The chart can now be as tall as you like.
 * **Inherited values**: play a move KataGo already searched, and the new
   position starts from that search. Its score, win rate, visits ("Visits:
   80000 inherited"), and the Move Quality verdict appear at once, instead of
@@ -34,8 +38,9 @@ search's visits; moves that have since left the board are dashed. See the
 * **Every variation's next move**: Display → Show every variation's next
   move puts the next move of every line you've played from a position on the
   board and in Next Move Options, in either candidate mode.
-* **Shorter loss labels**: a candidate 0.67 points worse than the best reads
-  `67`; one that loses nothing reads ☻.
+* **Loss labels**: a candidate 0.67 points worse than the best reads `-0.67`,
+  or `67` with Display → Use basis point display; one that loses nothing is
+  a blue star.
 * **Settings**: every setting on one page, with typed values, a find box,
   and the live board beside it. The visit limit per position accepts any
   number, and the page shows how long it takes at your engine's speed.
@@ -73,11 +78,17 @@ about 10 minutes at the engine's current 1,625 visits/s._
 
 ## Candidate moves on the board
 
-* Each circle is labelled with its loss in hundredths of a point against the
-  best available move from here: `67` means 0.67 points worse, and ☻ means
-  nothing lost. Bigger is worse, and the colour says the same. It's never a
-  visit count. Being behind in the game doesn't make the best available move
-  look bad. Next Move Options' costs column uses the same numbers.
+* Each circle is labelled with its loss in points against the best available
+  move from here: `-0.67` means 0.67 points worse, and a blue star means
+  nothing lost. **Display → Use basis point display** writes the loss in
+  hundredths of a point instead: `67`. Bigger is worse, and the colour says
+  the same. It's never a visit count. Being behind in the game doesn't make
+  the best available move look bad. Next Move Options' costs column uses the
+  same numbers, without the minus sign.
+* A move that scores a little higher than KataGo's top choice also gets the
+  star, not `+0.12`: KataGo ranks moves mostly by win rate and how much it
+  has searched them, and a lightly searched move's score is the noisiest
+  number on the board.
 * **Display → Candidate moves shown** chooses which circles appear:
   * **Points from best** (`≤ 0.30` … `≤ 8.00`, or All; default `≤ 0.30`)
     shows every move within that many points of best, regardless of visits.
@@ -126,9 +137,17 @@ since 1k visits, and its own visits._
   drops out of the Best + N places; those lines turn thin and dashed. Every
   line is labelled with its move: at its end where there is room, otherwise
   on the line itself.
-* Hover a candidate on the board to follow it: its line is drawn thick with
-  the others faded, its value is labelled at 2k, 5k, 10k visits and so on,
-  and its value now, change, and visits lead the card in large type.
+* Hover a candidate on the board, or a line's label in the chart, to follow
+  it: its line is drawn thick with the others faded, its value is labelled at
+  each visits tick, and a band along the top gives its value now, its visits
+  and share of the search, its policy prior, how its rank by visits changed,
+  when it was first searched, and its change since its line started.
+* Hovering a label also shows that move's continuation on the board, as if
+  you'd hovered the move itself, even for a move that has left the board.
+  Click a label to pin it; click it again, or anywhere else in the chart, to
+  let go.
+* The card's title bar shows the search's visits and time. Chart − / + on
+  the Move Report bar resizes it in steps of about 10%, as tall as you like.
 * A move's line starts once it has 50 visits, because earlier values are
   mostly noise. Each search keeps its own history, a few hundred samples even
   for an hour-long search. Revisiting a position keeps showing the earlier,

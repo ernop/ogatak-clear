@@ -54,6 +54,7 @@ function init() {
 		dropped_inputs: 0,
 		mouseover_time: 0,
 		pending_mouseover_fn_id: null,
+		chart_point: null,			// {node, s}: a move the Move Report's eval history follows, shown on the board as if hovered.
 
 	});
 }
@@ -71,6 +72,8 @@ let hub_main_props = {
 			if (config.mouseover_delay <= 0 || performance.now() - this.mouseover_time >= config.mouseover_delay * 1000) {
 				did_draw_pv = board_drawer.draw_pv(this.node, s);
 			}
+		} else if (this.chart_point && this.chart_point.node === this.node) {
+			did_draw_pv = board_drawer.draw_pv(this.node, this.chart_point.s, true);
 		}
 
 		let want_antiflicker = Boolean(this.engine.desired) && !this.playing_active_colour();
@@ -1335,10 +1338,30 @@ let hub_main_props = {
 		return null;
 	},
 
+	show_chart_point: function(s) {										// A point like "jj", or null.
+		let old = this.chart_point;
+		if (old ? (old.node === this.node && old.s === s) : !s) {
+			return;
+		}
+		this.chart_point = s ? {node: this.node, s} : null;
+		if ((s || old.node === this.node) && !this.mouse_point()) {
+			this.draw();
+		}
+	},
+
 	mouse_entering_point: function(s) {									// Called when mouse has entered some point e.g. "jj" or sometimes null
 
 		this.mouseover_time = performance.now();
 		move_report.hover_board_point(s);
+
+		if (!s && this.chart_point) {										// Off the board, back to what the eval history follows.
+			if (this.pending_mouseover_fn_id) {
+				clearTimeout(this.pending_mouseover_fn_id);
+				this.pending_mouseover_fn_id = null;
+			}
+			this.draw();
+			return;
+		}
 
 		if (config.mouseover_delay <= 0) {
 

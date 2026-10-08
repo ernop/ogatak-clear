@@ -37,7 +37,7 @@ const candidate_profile = require("./candidate_profile");
 const eval_history = require("./eval_history");
 const explored = require("./explored");
 const type_scale = require("./type_scale");
-const {info_cost, loss_text, safe_html, board_candidates, options_table_infos} = require("./utils");
+const {info_cost, loss_text, ZERO_LOSS, safe_html, board_candidates, options_table_infos} = require("./utils");
 
 const SECTION_TITLES = {
 	quality:  "MOVE QUALITY",
@@ -60,7 +60,7 @@ const HTML_SECTIONS = ["turn", "lastmove", "outcome", "options"];		// Rendered v
 
 const HISTORY_START_VISITS = eval_history.START_VISITS;
 const HISTORY_LINES = 24;				// Most lines drawn (the followed move and the game's next move are always added).
-const HISTORY_CHART_HEIGHT = 1.4;		// Multiple of the shared chart height; this chart also carries a header line.
+const HISTORY_CHART_HEIGHT = 1.4;		// Multiple of the shared chart height; this chart carries the most lines.
 
 const VERDICTS = [
 	// [max points lost (exclusive), label, css class (colours live in ogatak.css)]
@@ -75,7 +75,7 @@ const VERDICTS = [
 
 const LIMITS = {
 	move_report_width:        {min: 320, max: 1280, step: 40},
-	move_report_chart_height: {min: 90,  max: 400,  step: 20},
+	move_report_chart_height: {min: 90,  max: 4000, step: 20, proportional: true},		// −/+ move about 10%, in whole steps.
 	move_report_distribution_top_n: {min: 0, max: 1000, step: 1},
 	move_report_quality_window_n: {min: 1, max: 1000, step: 1},
 	move_report_status_window_n: {min: 1, max: 1000, step: 1},
@@ -211,6 +211,9 @@ function init() {
 		parts.push(`<div class="mr_secbox" id="mr_secbox_${sec}">`);
 		parts.push(`<div class="mr_sechead">`);
 		parts.push(`<span class="mr_sectitle">${SECTION_TITLES[sec]}</span>`);
+		if (sec === "history") {
+			parts.push(`<span class="mr_secstatus" id="mr_history_status"></span>`);
+		}
 		parts.push(`<span class="mr_secctls">`);
 		if (YSCALE_SECTIONS.includes(sec)) {
 			parts.push(`<span class="mr_secctl" id="mr_yscale_ctl_${sec}" data-sec="${sec}" data-act="yscale" title="Toggle linear / log2 y scale">lin</span>`);
@@ -279,6 +282,10 @@ function init() {
 		status_click_map: null,
 		distribution_hover_map: null,
 		history_board_hover: null,	// GTP move under the mouse on the board, or null.
+		history_label_hover: null,	// GTP move whose eval history label is under the mouse, or null.
+		history_pin: null,			// {node, move}: a label clicked to keep following that move at that node.
+		history_hits: [],			// Eval history label boxes from the last draw: {move, x0, y0, x1, y1}.
+		history_status: document.getElementById("mr_history_status"),
 
 	});
 
@@ -410,6 +417,19 @@ function init() {
 		ret.distribution_canvas.title = "";
 	});
 
+	ret.history_canvas.addEventListener("mousemove", (event) => {
+		ret.hover_history_label(ret.history_label_at(event.offsetX, event.offsetY));
+	});
+
+	ret.history_canvas.addEventListener("mouseleave", () => {
+		ret.hover_history_label(null);
+	});
+
+	ret.history_canvas.addEventListener("mousedown", (event) => {
+		event.preventDefault();
+		ret.click_history_label(ret.history_label_at(event.offsetX, event.offsetY));
+	});
+
 	// Canvas backing dimensions do not follow CSS layout automatically. Observe
 	// the chart containers so window resize, maximize, zoom, and flex reflow all
 	// redraw at their final widths.
@@ -473,7 +493,8 @@ let move_report_prototype = {
 		}[act];
 
 		let lim = LIMITS[key];
-		let val = config[key] + (dir * lim.step);
+		let step = lim.proportional ? Math.max(1, Math.round(config[key] * 0.1 / lim.step)) * lim.step : lim.step;
+		let val = config[key] + (dir * step);
 		config[key] = Math.max(lim.min, Math.min(lim.max, val));
 
 		config_io.save();
@@ -694,6 +715,9 @@ let move_report_prototype = {
 
 	fmt_visits: function(v) {
 		if (typeof v !== "number") return "?";
+		if (v >= 1e8) return `${(v / 1e6).toFixed(0)}M`;
+		if (v >= 1e7) return `${(v / 1e6).toFixed(1)}M`;
+		if (v >= 999500) return `${(v / 1e6).toFixed(2)}M`;
 		if (v >= 100000) return `${(v / 1000).toFixed(0)}k`;
 		if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
 		return v.toString();
@@ -804,7 +828,13 @@ let move_report_prototype = {
 					this.content_cache[sec] = html;
 				}
 			}
-			// "comments" and "tree" are stock widgets adopted into their cards.
+				// "comments" and "tree" are stock widgets adopted into their cards.
+		}
+
+		if (!visible.includes("history") && (this.history_pin || this.history_label_hover)) {
+			this.history_pin = null;
+			this.history_label_hover = null;
+			hub.show_chart_point(null);
 		}
 	},
 
@@ -972,7 +1002,10 @@ let move_report_prototype = {
 			for (let i = 0; i < infos.length; i++) {
 
 				let info = infos[i];
-				let cost_str = loss_text(costs[i]);
+				let cost_str = loss_text(costs[i], config.basis_point_display);
+				if (cost_str === ZERO_LOSS) {
+					cost_str = `<span class="mr_zero_loss">${ZERO_LOSS}</span>`;
+				}
 
 				// Gradient colours are continuous data, so they can't be classes:
 				// the row carries data-colour, bind_row_colours() turns it into
@@ -2064,6 +2097,34 @@ let move_report_prototype = {
 		}
 	},
 
+	// The other way round: the mouse on a line's label follows that move here
+	// and shows its continuation on the board, as hovering it there would.
+	// Clicking a label pins it (until clicked again, a click off the labels,
+	// or another position); the board mouse still takes over while it is there.
+
+	history_label_at: function(x, y) {
+		let hit = this.history_hits.find(b => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1);
+		return hit ? hit.move : null;
+	},
+
+	hover_history_label: function(move) {
+		this.history_canvas.style.cursor = move ? "pointer" : "";
+		if (move !== this.history_label_hover) {
+			this.history_label_hover = move;
+			this.draw_history(hub.node);
+		}
+	},
+
+	click_history_label: function(move) {
+		let pinned = this.pinned_history_move(hub.node);
+		this.history_pin = move && move !== pinned ? {node: hub.node, move} : null;
+		this.draw_history(hub.node);
+	},
+
+	pinned_history_move: function(node) {
+		return this.history_pin && this.history_pin.node === node ? this.history_pin.move : null;
+	},
+
 	history_data: function(node) {
 
 		if (!node.has_valid_analysis() || node.analysis.moveInfos.length === 0) {
@@ -2119,6 +2180,7 @@ let move_report_prototype = {
 				on_board: on_board.has(move),
 				tag: tags[move] || "",
 				change: points.length > 0 && now !== null ? now - points[0].v : null,
+				since: points.length > 0 ? points[0].x : null,
 				colour: this.value_colour(cost === null ? candidates.scale : cost, candidates.scale),
 			};
 		});
@@ -2139,6 +2201,7 @@ let move_report_prototype = {
 		});
 
 		return {
+			search,
 			lines,
 			explored: explored_marks,
 			sign,
@@ -2173,6 +2236,91 @@ let move_report_prototype = {
 			: {text: `▼${(-change).toFixed(2)}`, colour: "#ff9977ff"};
 	},
 
+	fmt_share: function(fraction) {					// Of the search's visits: "12%", "4.5%", "<0.1%"
+		let pct = fraction * 100;
+		if (pct >= 10) return `${pct.toFixed(0)}%`;
+		if (pct >= 0.1) return `${pct.toFixed(1)}%`;
+		return "<0.1%";
+	},
+
+	fmt_policy: function(prior) {					// Two significant figures however small: "12%", "0.35%", "0.0021%"
+		let pct = prior * 100;
+		if (pct >= 10) return `${pct.toFixed(0)}%`;
+		if (!(pct > 0)) return "0%";
+		return `${pct.toFixed(Math.max(1, 1 - Math.floor(Math.log10(pct))))}%`;
+	},
+
+	history_rank_text: function(search, move) {		// "#3 by visits (best #1)" or "#3 by visits (from #40)"
+		let ranks = eval_history.visit_ranks(search, move, HISTORY_START_VISITS).map(r => r.rank);
+		if (ranks.length === 0) return null;
+		let now = ranks[ranks.length - 1];
+		let best = Math.min(...ranks);
+		let text = `#${now} by visits`;
+		if (best < now) return `${text} (best #${best})`;
+		if (ranks[0] > now) return `${text} (from #${ranks[0]})`;
+		return text;
+	},
+
+	// The band's contents, as [text, type size, weight, colour]: what the
+	// followed move has had and how it got here, else the legend. Most
+	// telling first, since a narrow card drops pieces from the end; the line
+	// itself already shows its change and where it starts.
+
+	history_follow_pieces: function(data, focus_line, focus_mark) {
+		let pieces = [];
+		if (focus_mark) {
+			pieces.push([focus_mark.move, "body", "bold", this.label_colour(focus_mark.colour)]);
+			pieces.push([`■ ${this.fmt_score(focus_mark.lead)}`, "body", "bold", "#ffffffff"]);
+			pieces.push(["explored", "ui", "bold", "#e0b872ff"]);
+			pieces.push([`${this.fmt_visits(focus_mark.visits)} visits`, "ui", "", "#ffffffff"]);
+			if (focus_line && focus_line.info) {
+				pieces.push([`this search: ${this.fmt_score(focus_line.info.scoreLead)} on ${this.fmt_visits(focus_line.info.visits)}`, "ui", "", "#ffffffff"]);
+			}
+			return pieces;
+		}
+		let info = focus_line.info;
+		pieces.push([focus_line.move, "body", "bold", this.label_colour(focus_line.colour)]);
+		if (info) {
+			pieces.push([this.fmt_score(info.scoreLead), "body", "bold", "#ffffffff"]);
+		}
+		if (focus_line.tag) {
+			pieces.push([focus_line.tag, "ui", "bold", "#e0b872ff"]);
+		}
+		if (info) {
+			pieces.push([`${this.fmt_visits(info.visits)} visits (${this.fmt_share(info.visits / data.root_visits)})`, "ui", "bold", "#ffffffff"]);
+		}
+		if (info && typeof info.prior === "number") {
+			pieces.push([`policy ${this.fmt_policy(info.prior)}`, "ui", "", "#ffffffff"]);
+		}
+		let rank = this.history_rank_text(data.search, focus_line.move);
+		if (rank) {
+			pieces.push([rank, "ui", "", "#ffffffff"]);
+		}
+		let first = eval_history.first_seen(data.search, focus_line.move);
+		if (first !== null && first >= HISTORY_START_VISITS && first > data.search.roots[0]) {
+			pieces.push([`first searched at ${eval_history.fmt_count(first)}`, "ui", "", "#ffffffff"]);
+		}
+		let change = this.fmt_change(focus_line.change);
+		if (change) {
+			pieces.push([`${change.text} since ${eval_history.fmt_count(focus_line.since)}`, "ui", "bold", change.colour]);
+		}
+		if (!focus_line.on_board) {
+			pieces.push(["no longer on the board", "ui", "", "#ffffffff"]);
+		}
+		return pieces;
+	},
+
+	history_legend_pieces: function(data, lines, explored_marks) {
+		let pieces = [[`↑ better for ${data.side} (to play)`, "caption", "", "#ffffffff"]];
+		if (lines.some(line => !line.on_board)) {
+			pieces.push(["dashed: no longer on the board", "caption", "", "#ffffffff"]);
+		}
+		if (explored_marks.length > 0) {
+			pieces.push(["■ explored: search after the move", "caption", "", "#ffffffff"]);
+		}
+		return pieces;
+	},
+
 	label_colour: function(colour) {				// A gradient colour lifted toward white, so text in it stays legible on the dark chart.
 		let channel = (i) => {
 			let c = parseInt(colour.slice(i, i + 2), 16);
@@ -2185,21 +2333,37 @@ let move_report_prototype = {
 		if (!node || node.destroyed) {
 			return;
 		}
+		if (this.history_pin && this.history_pin.node !== node) {
+			this.history_pin = null;
+		}
+
+		// The board shows the label under the mouse, else the pinned one.
+
+		let shown = this.history_label_hover || this.pinned_history_move(node);
+		hub.show_chart_point(shown ? node.get_board().parse_gtp_move(shown) || null : null);
+
+		let data = this.history_data(node);
+		let status = data ? `${data.live ? "" : "stopped · "}${this.fmt_visits(data.root_visits)} visits · ${eval_history.fmt_time(data.t_now)}` : "";
+		if (this.history_status.textContent !== status) {
+			this.history_status.textContent = status;
+		}
+
 		this.size_canvas(this.history_canvas, HISTORY_CHART_HEIGHT);
 		this.history_ctx.clearRect(0, 0, this.history_canvas.width, this.history_canvas.height);
-		this.draw_history_chart(this.history_data(node), this.history_board_hover);
+		this.draw_history_chart(data, this.history_label_hover || this.history_board_hover || this.pinned_history_move(node), this.pinned_history_move(node));
 	},
 
-	draw_history_chart: function(data, focus) {
+	draw_history_chart: function(data, focus, pinned) {
 
 		let canvas = this.history_canvas;
 		let ctx = this.history_ctx;
 		let cap = type_scale.px("caption");
-		let head_h = Math.round(type_scale.px("body") * 1.6);
 		let x0 = chart_pads().left;
 		let x1 = canvas.width - Math.round(cap * 3.4);			// Room for move names at the line ends.
-		let y0 = head_h + Math.round(cap * 0.4);
+		let y0 = Math.round(cap * 0.7);							// Room for the top value label.
 		let y1 = canvas.height - chart_pads().bottom;
+
+		this.history_hits = [];
 
 		if (x1 - x0 < 60 || y1 - y0 < 30) {
 			return;
@@ -2218,66 +2382,6 @@ let move_report_prototype = {
 			if (extra && !lines.includes(extra)) {
 				lines.push(extra);
 			}
-		}
-
-		// Header line: the followed move's numbers on the left, the search on the right.
-
-		let head_y = Math.round(head_h / 2);
-		let right_edge = canvas.width - 2;
-		ctx.textBaseline = "middle";
-		if (data) {
-			ctx.font = type_scale.canvas_font("ui");
-			ctx.fillStyle = "#ffffffff";
-			ctx.textAlign = "right";
-			let search_text = `${data.live ? "" : "stopped · "}${this.fmt_visits(data.root_visits)} visits · ${eval_history.fmt_time(data.t_now)}`;
-			ctx.fillText(search_text, right_edge, head_y);
-			right_edge -= ctx.measureText(search_text).width + 16;
-		}
-
-		// Pieces are dropped from the end when the card is narrow, so the value
-		// comes straight after the move.
-
-		let pieces = [];
-		if (focus_mark) {
-			pieces.push([focus_mark.move, "body", "bold", this.label_colour(focus_mark.colour)]);
-			pieces.push([`■ ${this.fmt_score(focus_mark.lead)}`, "body", "bold", "#ffffffff"]);
-			pieces.push(["explored", "ui", "bold", "#e0b872ff"]);
-			pieces.push([`${this.fmt_visits(focus_mark.visits)} visits`, "ui", "", "#ffffffff"]);
-			if (focus_line && focus_line.info) {
-				pieces.push([`this search: ${this.fmt_score(focus_line.info.scoreLead)} on ${this.fmt_visits(focus_line.info.visits)}`, "ui", "", "#ffffffff"]);
-			}
-		} else if (focus_line) {
-			pieces.push([focus_line.move, "body", "bold", this.label_colour(focus_line.colour)]);
-			if (focus_line.info) {
-				pieces.push([this.fmt_score(focus_line.info.scoreLead), "body", "bold", "#ffffffff"]);
-			}
-			if (focus_line.tag) {
-				pieces.push([focus_line.tag, "ui", "bold", "#e0b872ff"]);
-			}
-			let change = this.fmt_change(focus_line.change);
-			if (change) {
-				pieces.push([`${change.text} since ${eval_history.fmt_count(HISTORY_START_VISITS)}`, "ui", "bold", change.colour]);
-			}
-			if (focus_line.info) {
-				pieces.push([`${this.fmt_visits(focus_line.info.visits)} visits`, "ui", "", "#ffffffff"]);
-			}
-			if (!focus_line.on_board) {
-				pieces.push(["no longer on the board", "ui", "", "#ffffffff"]);
-			}
-		} else {
-			pieces.push(["Hover a candidate on the board to follow it", "ui", "", "#ffffffff"]);
-		}
-		let hx = 2;
-		ctx.textAlign = "left";
-		for (let [text, size, weight, colour] of pieces) {
-			ctx.font = type_scale.canvas_font(size, weight);
-			let w = ctx.measureText(text).width;
-			if (hx + w > right_edge) {
-				break;
-			}
-			ctx.fillStyle = colour;
-			ctx.fillText(text, hx, head_y);
-			hx += w + Math.round(cap * 1.2);
 		}
 
 		if (!data || lines.length === 0) {
@@ -2336,7 +2440,7 @@ let move_report_prototype = {
 			ctx.fillText(this.fmt_axis_score(data.sign * v), x0 - 5, y);
 		}
 
-		let ticks = eval_history.visit_ticks(xs.lo, xs.hi, xs.log);
+		let ticks = eval_history.visit_ticks(xs.lo, xs.hi, xs.log, Math.max(2, Math.floor((x1 - x0) / (cap * 4))));
 		let last_right = -Infinity;
 		ctx.textAlign = "center";
 		ctx.textBaseline = "top";
@@ -2356,22 +2460,43 @@ let move_report_prototype = {
 			}
 		}
 
-		// Notes for the plot's top-left corner, drawn over the lines later; every
-		// label keeps clear of them.
+		// A band across the top of the plot holds the followed move's numbers,
+		// else the legend. No label is ever placed in it, so following a move
+		// never moves a label (out from under the mouse, say). On a narrow card
+		// the numbers wrap to a second row over the plot, and then stop.
 
-		let notes = [`↑ better for ${data.side} (to play)`];
-		if (lines.some(line => !line.on_board)) {
-			notes.push("dashed: no longer on the board");
+		let band = {x0: x0 + 1, y0: y0 + 1, x1: x1 - 1, y1: y0 + 1 + Math.round(type_scale.px("body") * 1.5)};
+		let pieces = focus_line || focus_mark
+			? this.history_follow_pieces(data, focus_line, focus_mark)
+			: this.history_legend_pieces(data, lines, explored_marks);
+		let rows = [[]];
+		let gap = Math.round(cap * 0.9);
+		let bx = band.x0 + 5;
+		for (let [text, size, weight, colour] of pieces) {
+			ctx.font = type_scale.canvas_font(size, weight);
+			let w = ctx.measureText(text).width;
+			if (bx + w > band.x1 - 5 && rows[rows.length - 1].length > 0) {
+				if (rows.length === 2) {
+					break;
+				}
+				rows.push([]);
+				bx = band.x0 + 5;
+			}
+			if (bx + w > band.x1 - 5) {
+				break;
+			}
+			rows[rows.length - 1].push({text, font: ctx.font, colour, x: bx, w});
+			bx += w + gap;
 		}
-		if (explored_marks.length > 0) {
-			notes.push("■ explored: search after the move");
-		}
-		ctx.font = type_scale.canvas_font("caption");
-		let note_boxes = notes.map((text, i) => {
-			let ny = y0 + 3 + i * (cap + 3);
-			return {text, x0: x0 + 2, y0: ny - 1, x1: x0 + 10 + ctx.measureText(text).width, y1: ny + cap + 2};
-		});
-		let obstacles = note_boxes.slice();
+		let row_h = band.y1 - band.y0;
+		let band_rows = rows.filter(row => row.length > 0).map((row, i) => ({
+			row,
+			x0: band.x0,
+			y0: band.y0 + i * row_h,
+			x1: Math.min(band.x1, row[row.length - 1].x + row[row.length - 1].w + 5),
+			y1: band.y0 + (i + 1) * row_h,
+		}));
+		let obstacles = [band];
 		let overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 
 		stroke_position_marker(ctx, Math.round(xs.x_of(data.root_visits)) + 0.5, y0, y1);
@@ -2450,19 +2575,41 @@ let move_report_prototype = {
 			ctx.strokeStyle = "#ffffffff";
 			ctx.stroke();
 			ctx.globalAlpha = 1;
-			obstacles.push({x0: d.x - d.r - 1, y0: d.y - d.r - 1, x1: d.x + d.r + 1, y1: d.y + d.r + 1});
+			let room = cap * 0.6 + 1;							// The followed size, so following never moves a label.
+			obstacles.push({x0: d.x - room, y0: d.y - room, x1: d.x + room, y1: d.y + room});
+			this.history_hits.push({move: d.mark.move, x0: d.x - room, y0: d.y - room, x1: d.x + room, y1: d.y + room});
 		}
 		let unlabelled = squares.filter(d => !d.end);
+
+		// Every line is named: at its end where there is room, else on the line
+		// itself, else beside the end with a leader. Placed in a fixed order,
+		// before anything that depends on what is followed.
+
+		ctx.font = type_scale.canvas_font("caption", "bold");
+		let specs = lines.map(line => Object.assign({w: ctx.measureText(line.move).width + 8, h: cap + 4}, geometry.get(line)));
+		let mark_specs = unlabelled.map(d => ({w: ctx.measureText(d.mark.move).width + 8, h: cap + 4, px: [d.x + cap * 0.6], py: [d.y]}));
+		let placements = eval_history.place_line_labels(specs.concat(mark_specs), obstacles, {x0: x0 + 1, y0: y0 + 1, x1: canvas.width - 1, y1: y1 - 1});
+		let label_box = (p, spec) => ({x0: p.x - spec.w / 2, y0: p.y - spec.h / 2, x1: p.x + spec.w / 2, y1: p.y + spec.h / 2});
+		lines.forEach((line, i) => {
+			obstacles.push(label_box(placements[i], specs[i]));
+			this.history_hits.push(Object.assign({move: line.move}, label_box(placements[i], specs[i])));
+		});
+		unlabelled.forEach((d, k) => {
+			obstacles.push(label_box(placements[lines.length + k], mark_specs[k]));
+			this.history_hits.push(Object.assign({move: d.mark.move}, label_box(placements[lines.length + k], mark_specs[k])));
+		});
 
 		// "After 10k visits it said...": the followed move's value at each tick.
 
 		let annotations = [];
+		obstacles.push(...band_rows.slice(1));
 		if (focus_line) {
 			ctx.font = type_scale.canvas_font("caption", "bold");
 			let points = focus_line.points;
 			let first_x = points[0].x;
 			let last_x = points[points.length - 1].x;
-			for (let n of [last_x, ...ticks.filter(n => n >= first_x && n < last_x)]) {		// The latest value claims its place first.
+			let apart = (n) => xs.x_of(last_x) - xs.x_of(n) > cap * 4;			// A tick right by the latest value would only repeat it.
+			for (let n of [last_x, ...ticks.filter(n => n >= first_x && n < last_x && apart(n))]) {		// The latest value claims its place first.
 				let p = eval_history.value_at(points, n);
 				if (!p) continue;
 				let text = this.fmt_score(data.sign * p.v);
@@ -2483,29 +2630,30 @@ let move_report_prototype = {
 			}
 		}
 
-		ctx.font = type_scale.canvas_font("caption");
 		ctx.textAlign = "left";
-		ctx.textBaseline = "top";
-		for (let note of note_boxes) {
+		ctx.textBaseline = "middle";
+		for (let box of band_rows) {
 			ctx.fillStyle = "#181818e6";
-			ctx.fillRect(note.x0, note.y0, note.x1 - note.x0, note.y1 - note.y0);
-			ctx.fillStyle = "#ffffffff";
-			ctx.fillText(note.text, note.x0 + 4, note.y0 + 1);
+			ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+			for (let piece of box.row) {
+				ctx.font = piece.font;
+				ctx.fillStyle = piece.colour;
+				ctx.fillText(piece.text, piece.x, (box.y0 + box.y1) / 2);
+			}
 		}
 
-		// Every line is named: at its end where there is room, else on the line
-		// itself, else beside the end with a leader.
-
 		ctx.font = type_scale.canvas_font("caption", "bold");
-		let order = focus_line ? [focus_line, ...lines.filter(line => line !== focus_line)] : lines;
-		let specs = order.map(line => Object.assign({w: ctx.measureText(line.move).width + 8, h: cap + 4}, geometry.get(line)));
-		let mark_specs = unlabelled.map(d => ({w: ctx.measureText(d.mark.move).width + 8, h: cap + 4, px: [d.x + d.r], py: [d.y]}));
-		let placements = eval_history.place_line_labels(specs.concat(mark_specs), obstacles, {x0: x0 + 1, y0: y0 + 1, x1: canvas.width - 1, y1: y1 - 1});
-
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
+		let outline_pin = (move, box) => {
+			if (move === pinned) {
+				ctx.strokeStyle = "#ffffffff";
+				ctx.lineWidth = 1.5;
+				ctx.strokeRect(box.x0 - 0.5, box.y0 - 0.5, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1);
+			}
+		};
 		unlabelled.forEach((d, k) => {
-			let p = placements[order.length + k];
+			let p = placements[lines.length + k];
 			let spec = mark_specs[k];
 			ctx.globalAlpha = !following || d.mark === focus_mark ? 1 : 0.55;
 			if (p.kind !== "end") {
@@ -2523,8 +2671,9 @@ let move_report_prototype = {
 			ctx.fillStyle = this.label_colour(d.mark.colour);
 			ctx.fillText(d.mark.move, p.x, p.y);
 			ctx.globalAlpha = 1;
+			outline_pin(d.mark.move, label_box(p, spec));
 		});
-		order.forEach((line, i) => {
+		lines.forEach((line, i) => {
 			let p = placements[i];
 			let spec = specs[i];
 			ctx.globalAlpha = line === focus_line ? 1 : following ? 0.55 : line.on_board ? 1 : 0.75;
@@ -2543,6 +2692,7 @@ let move_report_prototype = {
 			ctx.fillStyle = this.label_colour(line.colour);
 			ctx.fillText(line.move, p.x, p.y);
 			ctx.globalAlpha = 1;
+			outline_pin(line.move, label_box(p, spec));
 		});
 
 		ctx.font = type_scale.canvas_font("caption", "bold");

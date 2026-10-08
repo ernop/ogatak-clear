@@ -95,16 +95,31 @@ reference.
    the number shown on them is "Delta" (points lost vs the best available
    move), NOT visits: the visit count is irrelevant as a top-level item on
    the highlights (2026-08-11).
-   Loss notation (2026-10-07): Delta and the costs column write a loss in
-   hundredths of a point, unsigned, with no decimal point: 0.67 points
-   worse than the best reads "67", 1.60 reads "160". A move that loses
-   nothing, to the hundredth, reads "☻", including a move that scores
-   better than the reference. The minus sign, leading zero, and decimal
-   point carried no information: a shown loss is never negative, and the
-   colour already says how bad it is, so a bigger number is simply worse.
-   The loss is always the mover's, so "Numbers from Black's view" does not
-   flip it. The filled ☻ rather than the outline ☺ because the outline
-   face is too faint at board label size.
+   Loss notation (2026-10-07, revised 2026-10-08): by default Delta and the
+   costs column write a loss in points: "-0.67" on the board, "0.67" in the
+   costs column (its heading already says cost). **Display → Use basis
+   point display** (`basis_point_display`, default off) writes hundredths
+   of a point instead, unsigned, with no decimal point: 0.67 points worse
+   than the best reads "67", 1.60 reads "160"; the sign, leading zero, and
+   decimal point carry no information when a shown loss is never negative
+   and the colour already says how bad it is. In both notations a move that
+   loses nothing, to the hundredth, is a blue star, including a move that
+   scores better than the reference, so the board never shows "+0.12". On
+   the board the star is drawn as a shape, not a font glyph, in blue
+   (#2f7cf6) with a white rim, so it looks the same with any installed
+   fonts and stands out from the black numbers on every candidate colour;
+   the costs column shows ★ in the same blue. (The 2026-10-07 "☻" was not
+   distinctive enough.) The loss is always the mover's, so "Numbers from
+   Black's view" does not flip it.
+   Why a move can score better than the reference, and why it still reads
+   as losing nothing rather than re-basing every loss on it (2026-10-08):
+   the reference is KataGo's top move, which KataGo ranks by visits and a
+   lower confidence bound on its utility (mostly winrate, plus a little
+   score), not by scoreLead. A lightly searched move can show a higher
+   scoreLead than the top move, and such values are the noisiest on the
+   board (Eval history shows them spiking and collapsing). Measuring every
+   loss from the highest raw scoreLead would let one such move shift every
+   number on the board, report after report.
    **Display → Candidate moves shown** chooses which circles appear. It
    offers two kinds of cutoff in one menu; exactly one item is checked.
    Points cutoffs never depend on how many engine visits a move
@@ -229,8 +244,14 @@ reference.
      mostly noise. Visits rather than time (2026-09-26): visits measure the
      search's actual progress, while time depends on the machine and on
      whatever else shares the GPU (the same kind of search ran at 666 and
-     1,481 visits/s in two measurement runs). The header still shows elapsed
-     time next to the visits.
+     1,481 visits/s in two measurement runs). The card's title bar shows the
+     visits and elapsed time.
+   - Ticks (2026-10-08): round numbers, as many as fit one per four
+     caption heights of plot width: every 1M on a 10M linear search in a
+     card about 750 px wide, where it was every 2M. A log axis has 1, 2, 5
+     per decade, or 1, 2, 3, 5, 7 when there is room for that many.
+   - Height: the chart is 1.4 × the shared chart height (Move Report
+     item 5), with no practical upper limit (2026-10-08).
    - y is each move's own score for the player to move: up is better for
      them. Every label is in "B+" / "W+" form, and the chart states the
      orientation ("↑ better for White (to play)").
@@ -248,21 +269,44 @@ reference.
      right as there is room, on a dark backing; otherwise beside the end,
      moved to the nearest free spot with a leader line. Label text is the
      line's colour lifted toward white so it stays legible.
-   - Hovering a candidate on the board follows that move: its line is drawn
-     thick on top with the rest faded, its value is labelled at each visits
-     tick ("after 10k visits it said…"), and the header gives the move, its
-     value now, a "played" / "variation" tag when it is in the game record,
-     its change since the chart started (▲ better / ▼ worse for the player
-     to move), and its visits, noting when it is no longer on the board.
-     The value comes straight after the move because a narrow card drops
-     the header's last pieces first (2026-10-07).
+   - Following a move: hovering it on the board, or hovering its label (or
+     explored square) in the chart (2026-10-08), draws its line thick on
+     top with the rest faded and labels its value at each visits tick
+     ("after 1M visits it said…"), skipping a tick right beside the latest
+     value. A band across the top of the plot then gives, most telling
+     first: the move; its value now; a "played" / "variation" tag when it is
+     in the game record; its visits and share of the search's (effort); its
+     policy prior; its rank by visits now, with its best rank, or the rank
+     it climbed from ("#6 by visits (from #24)"); when it was first
+     searched, if after the search's first report; its change since its
+     line started (▲ better / ▼ worse for the player to move, "since 5.7M"
+     for a late line); and "no longer on the board". A narrow card wraps
+     the band to a second row, then drops the last pieces. Not following,
+     the band holds the legend ("↑ better for White (to play)", dashed
+     lines, explored squares).
+   - Hovering a label also shows that move's continuation on the board and
+     its numbers in the info bar, exactly as hovering the move on the board
+     would, including a move that has left the board (2026-10-08). Clicking
+     a label pins it: the move stays followed, its label outlined, and its
+     continuation stays on the board while the mouse is elsewhere. Clicking
+     it again, clicking anywhere else in the chart, or moving to another
+     position lets go; the mouse on the board takes over while it is there.
+     This respects "Show variation on hover" like board hovering does.
+   - No instruction text (2026-10-08): the "Hover a candidate on the board
+     to follow it" line and the header row it sat in are gone, and the
+     plot has that height. Labels are never placed in the band's first row
+     and are placed before anything that depends on what is followed, so
+     following a move never moves a label, in particular not out from under
+     the mouse.
    - The table of moves under the chart (value now, worse-by, sparkline,
      change, visits) was removed on 2026-09-26: the chart carries every line,
-     and hovering gives exact numbers.
+     and hovering gives exact numbers. On 2026-10-08, rather than restore
+     it, the label hover above gives each move's continuation, and the band
+     its effort and rank history.
    - Each KataGo report is recorded under its query id, so every search of a
      position has its own history. The card shows the search that produced
      the displayed analysis, so like that analysis it never regresses to a
-     fresher, shallower search; the header shows its visits and elapsed
+     fresher, shallower search; the title bar shows its visits and elapsed
      time, prefixed "stopped" once it is no longer running. Every report is
      kept for the first few seconds, then samples at least 4% of the elapsed
      time apart, so an hour-long search keeps a few hundred; the newest
@@ -473,7 +517,9 @@ Requirements now:
    The variation tree is default-hidden; see `PRODUCT-workspace.md`.
 5. **Layout sizes are adjustable live from the panel itself**: a dim
    controls bar at the top offers width −/+ (card width) and chart −/+
-   (chart height). Dragging the right edge of either chart also changes
+   (chart height, about 10% per click, 90 to 4000 px; the cap was 400 px
+   until 2026-10-08, which stopped Eval history growing on a tall screen).
+   Dragging the right edge of either chart also changes
    the shared card width continuously. No dialog, no restart, no menu
    digging. **Text size is deliberately NOT panel-local**: the panel
    follows the app-wide `info_font_size` (Sizes → Info font), the same

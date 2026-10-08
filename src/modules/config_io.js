@@ -71,6 +71,7 @@ exports.defaults = {
 	"candidate_min_visits": 50,					// Count mode: visits a move needs to take one of those places. 0 = no minimum.
 	"always_show_next_move_eval": true,			// Display → Show every variation's next move: either mode, plus Next Move Options.
 	"mark_explored_moves": false,				// Draw explored moves (explored.js) as rounded squares instead of circles.
+	"basis_point_display": false,				// Losses as hundredths of a point ("67") instead of points ("-0.67"); see utils.loss_text.
 	"candidate_gradient": "green_red",			// See colour_gradients.js. "classic" uses the Colours-menu pair.
 	"mouseover_pv": true,
 	"mouseover_delay": 0,
@@ -372,6 +373,10 @@ function apply_fixes() {
 
 	if (typeof config.mark_explored_moves !== "boolean") {
 		config.mark_explored_moves = exports.defaults.mark_explored_moves;
+	}
+
+	if (typeof config.basis_point_display !== "boolean") {
+		config.basis_point_display = exports.defaults.basis_point_display;
 	}
 
 	if (!colour_gradients.has(config.candidate_gradient)) {
