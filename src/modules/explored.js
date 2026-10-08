@@ -4,6 +4,9 @@
 // a move is an evaluation of that move. Back at the parent, a move whose own
 // position was searched with more visits than the parent's search gave it shows
 // that search's result in place of the parent's estimate.
+//
+// Inherited values (PRODUCT.md, "Inherited values") read the same fact the other
+// way: the parent's search of a move is a search of the position after it.
 
 const SETTINGS_KEYS = ["rules", "komi", "boardXSize", "boardYSize", "overrideSettings"];
 const SETTINGS_CACHE_LIMIT = 1000;
@@ -120,6 +123,21 @@ function explored_info(r, order, prior, own) {
 	return info;
 }
 
+// The move into node in GTP form ("pass" for a pass) when node is a single move
+// by its parent's side to move with no setup stones; otherwise null.
+
+function move_into(node) {
+
+	let parent = node.parent;
+	if (!parent || node.move_count() !== 1 || node.has_key("AB") || node.has_key("AW") || node.has_key("AE")) {
+		return null;
+	}
+
+	let board = parent.get_board();
+	let key = board.active === "b" ? "B" : "W";
+	return node.has_key(key) ? board.gtp(node.get(key)) : null;
+}
+
 // Root results of node's children that are single moves by the side to move,
 // searched with the same settings as node's own search.
 
@@ -129,21 +147,17 @@ function child_results(node) {
 		return [];
 	}
 
-	let board = node.get_board();
-	let key = board.active === "b" ? "B" : "W";
 	let ret = [];
 
 	for (let child of node.children) {
-		if (child.move_count() !== 1 || !child.has_key(key) || child.has_key("AB") || child.has_key("AW") || child.has_key("AE")) {
-			continue;
-		}
-		if (!child.has_valid_analysis() || !same_settings(node.analysis_context, child.analysis_context)) {
+		let move = move_into(child);
+		if (move === null || !child.has_valid_analysis() || !same_settings(node.analysis_context, child.analysis_context)) {
 			continue;
 		}
 		let root = child.analysis.rootInfo;
 		let top = child.analysis.moveInfos[0];
 		ret.push({
-			move: board.gtp(child.get(key)),
+			move: move,
 			visits: root.visits,
 			winrate: root.winrate,
 			scoreLead: root.scoreLead,
@@ -187,4 +201,34 @@ function node_infos(node) {
 	return merge(node.analysis.moveInfos, results, prior_of);
 }
 
-module.exports = {same_settings, merge, child_results, node_infos};
+// The parent's own search of the move into node, as a root of node's position:
+// {visits, winrate, scoreLead, scoreSelfplay}, Black-POV like rootInfo. Null
+// unless it searched node's position more than node's own search did, with the
+// same settings. Without a search of its own, node takes it unless its SGF
+// carries saved values, whose visit counts are unknown.
+
+function inherited_root(node) {
+
+	let parent = node.parent;
+	if (!parent || !parent.has_valid_analysis()) {
+		return null;
+	}
+
+	let move = move_into(node);
+	let info = move === null ? null : parent.analysis.moveInfos.find(o => o.move === move);
+	if (!info || !Number.isFinite(info.visits) || info.visits <= 0) {
+		return null;
+	}
+
+	if (node.has_valid_analysis()) {
+		if (info.visits <= node.analysis.rootInfo.visits || !same_settings(parent.analysis_context, node.analysis_context)) {
+			return null;
+		}
+	} else if (node.has_key("SBKV") || node.has_key("OGSC")) {
+		return null;
+	}
+
+	return {visits: info.visits, winrate: info.winrate, scoreLead: info.scoreLead, scoreSelfplay: info.scoreSelfplay};
+}
+
+module.exports = {same_settings, merge, child_results, node_infos, inherited_root};

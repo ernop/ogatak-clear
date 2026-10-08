@@ -6,7 +6,7 @@ global.config = {};
 
 const new_node = require("./node");
 const {ANALYSIS_CONTEXT_PROPERTY, analysis_context} = require("./query");
-const {same_settings, merge, child_results, node_infos} = require("./explored");
+const {same_settings, merge, child_results, node_infos, inherited_root} = require("./explored");
 const {select_candidates, next_move_gtp_set, board_candidates, options_table_infos} = require("./utils");
 
 const ENGINE = {mode: "analysis", filepath: "/k/katago", engineconfig: "/k/a.cfg", weights: "/k/net.bin.gz", version: [1, 16, 0]};
@@ -230,5 +230,82 @@ assert.deepStrictEqual(on_board(within(0.3)), ["Q16", "K4"]);
 assert.deepStrictEqual(moves(options_table_infos(q)), ["Q16", "Q4", "D4", "R16", "C4", "Q17"]);
 
 assert.deepStrictEqual(options_table_infos(child(root, "B", "aa")), []);		// No analysis yet.
+
+// ------------------------------------------------------------------------------------------------
+// Inherited values: the parent's search of a move stands for the position after it until that
+// position's own search, with the same settings, has more visits.
+
+let r = child(root, "B", "pp");				// Q4; White to play at r.
+let at_d16 = context([["B", "Q4"], ["W", "D16"]]);
+
+analyse(r, context([["B", "Q4"]]), {
+	id: "r", rootInfo: {visits: 100000, winrate: 0.55, scoreLead: 1.5},
+	moveInfos: [
+		{move: "D16", order: 0, visits: 80000, winrate: 0.56, scoreLead: 1.6, scoreSelfplay: 2.0, prior: 0.3, pv: ["D16", "Q16"]},
+		{move: "D4", order: 1, visits: 15000, winrate: 0.58, scoreLead: 2.4, prior: 0.2, pv: ["D4"]},
+		{move: "Q16", order: 2, visits: 3000, winrate: 0.60, scoreLead: 3.0, prior: 0.1, pv: ["Q16"]},
+		{move: "C3", order: 3, visits: 2000, winrate: 0.62, scoreLead: 3.5, prior: 0.1, pv: ["C3"]},
+		{move: "pass", order: 4, visits: 3, winrate: 1.2, scoreLead: 9.0, prior: 0.0, pv: ["pass"]},
+	],
+	policy,
+});
+
+let d16 = child(r, "W", "dd");				// Just played, not searched yet.
+assert.deepStrictEqual(inherited_root(d16), {visits: 80000, winrate: 0.56, scoreLead: 1.6, scoreSelfplay: 2.0});
+assert.strictEqual(d16.stored_score(), 1.6);
+assert.strictEqual(d16.stored_winrate(), 0.56);
+
+analyse(d16, at_d16, {id: "d16", rootInfo: {visits: 500, winrate: 0.50, scoreLead: 0.9}, moveInfos: [{move: "Q16", order: 0, visits: 400, pv: ["Q16"]}]});
+assert.strictEqual(inherited_root(d16).visits, 80000);
+assert.strictEqual(d16.stored_score(), 1.6);
+
+analyse(d16, at_d16, {id: "d16", rootInfo: {visits: 80000, winrate: 0.54, scoreLead: 1.2}, moveInfos: [{move: "Q16", order: 0, visits: 70000, pv: ["Q16"]}]});
+assert.strictEqual(inherited_root(d16), null);		// Ties go to the position's own search.
+assert.strictEqual(d16.stored_score(), 1.2);
+assert.strictEqual(d16.stored_winrate(), 0.54);
+
+let d4_komi = child(r, "W", "dp");			// Searched at another komi: not comparable, so its own search stands.
+analyse(d4_komi, context([["B", "Q4"], ["W", "D4"]], {komi: 6.5}), {
+	id: "d4k", rootInfo: {visits: 200, winrate: 0.4, scoreLead: 3.3}, moveInfos: [{move: "Q16", order: 0, visits: 150, pv: []}],
+});
+assert.strictEqual(inherited_root(d4_komi), null);
+assert.strictEqual(d4_komi.stored_score(), 3.3);
+
+let q16_avoiding = child(r, "W", "pd");		// Its own search was told to avoid moves, as the user asked.
+analyse(q16_avoiding, context([["B", "Q4"], ["W", "Q16"]], {avoidMoves: [{player: "B", moves: ["C3"], untilDepth: 1}]}), {
+	id: "q16", rootInfo: {visits: 100, winrate: 0.5, scoreLead: 0.2}, moveInfos: [{move: "C17", order: 0, visits: 90, pv: []}],
+});
+assert.strictEqual(inherited_root(q16_avoiding), null);
+
+let c3_from_file = child(r, "W", "cq");		// Values saved in the SGF have unknown visits.
+c3_from_file.set("SBKV", "40.00");
+c3_from_file.set("OGSC", "-0.50");
+assert.strictEqual(inherited_root(c3_from_file), null);
+assert.strictEqual(c3_from_file.stored_score(), -0.5);
+assert.strictEqual(c3_from_file.stored_winrate(), 0.4);
+
+let r_pass = child(r, "W", "");
+assert.strictEqual(inherited_root(r_pass).visits, 3);
+assert.strictEqual(r_pass.stored_score(), 9.0);
+assert.strictEqual(r_pass.stored_winrate(), 1);		// Clamped like a node's own winrate.
+
+let k10 = child(r, "W", "jj");				// Never reported by r's search.
+assert.strictEqual(inherited_root(k10), null);
+assert.strictEqual(k10.stored_score(), null);
+assert.strictEqual(k10.stored_winrate(), null);
+
+assert.strictEqual(inherited_root(child(r, "B", "dd")), null);		// Black twice: not one of r's options.
+let d16_edited = child(r, "W", "dd");
+d16_edited.set("AB", "aa");
+assert.strictEqual(inherited_root(d16_edited), null);
+assert.strictEqual(inherited_root(root), null);
+assert.strictEqual(inherited_root(child(child(root, "B", "aa"), "W", "bb")), null);		// The parent has no search.
+
+// Both directions agree: D4's own 1,000-visit search lost to p's 1,800 visits of D4 above,
+// so p lists p's own entry and D4 itself shows that entry's value.
+
+assert.strictEqual(node_infos(p)[1].explored, undefined);
+assert.strictEqual(inherited_root(d4).visits, 1800);
+assert.strictEqual(d4.stored_score(), 0.7);
 
 console.log("explored tests passed");

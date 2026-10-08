@@ -12,6 +12,7 @@ const path = require("path");
 const new_board = require("./board");
 const stringify = require("./stringify");
 const {ANALYSIS_CONTEXT_PROPERTY} = require("./query");
+const {inherited_root} = require("./explored");
 const {replace_all, valid_analysis_object, handicap_stones, points_list, xy_to_s} = require("./utils");
 
 const MIN_GRAPH_DEPTH = 60;
@@ -998,6 +999,10 @@ class Node {
 	}
 
 	stored_score() {
+		let inherited = inherited_root(this);
+		if (inherited) {
+			return typeof inherited.scoreLead === "number" ? inherited.scoreLead : null;
+		}
 		if (this.has_valid_analysis()) {
 			let score = this.analysis.rootInfo.scoreLead;
 			if (typeof score === "number") {						// scoreLead might not be present if it's a GTP engine.
@@ -1048,6 +1053,10 @@ class Node {
 	}
 
 	stored_winrate() {
+		let inherited = inherited_root(this);
+		if (inherited) {
+			return typeof inherited.winrate === "number" ? Math.min(1, Math.max(0, inherited.winrate)) : null;
+		}
 		if (this.has_valid_analysis()) {
 			let winrate = this.analysis.rootInfo.winrate;
 			if (typeof winrate === "number") {

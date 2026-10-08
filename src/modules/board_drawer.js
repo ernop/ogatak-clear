@@ -21,6 +21,7 @@ const {translate} = require("./translate");
 
 const colour_gradients = require("./colour_gradients");
 const eval_history = require("./eval_history");
+const {inherited_root} = require("./explored");
 
 const {handicap_stones, moveinfo_filter, board_candidates, pad, new_2d_array, xy_to_s, float_to_hex_ff,
 	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html, info_cost, loss_text} = require("./utils");
@@ -1235,27 +1236,21 @@ let board_drawer_prototype = {
 			},
 			score: () => {
 				let score = "";
-				if (node.has_valid_analysis()) {
-					let lead = override_moveinfo ? override_moveinfo.scoreLead : node.analysis.rootInfo.scoreLead;
-					if (typeof lead === "number") {
-						let leader = lead >= 0 ? "B" : "W";
-						if (lead < 0) lead *= -1;
-						score = `${leader}+${lead.toFixed(2)}`;
-					}
-				} else if (node.has_key("OGSC")) {
-					let lead = parseFloat(node.get("OGSC"));
-					if (!Number.isNaN(lead)) {
-						let leader = lead >= 0 ? "B" : "W";
-						if (lead < 0) lead *= -1;
-						score = `${leader}+${lead.toFixed(2)}`;
-					}
+				let lead = override_moveinfo ? override_moveinfo.scoreLead : node.stored_score();
+				if (typeof lead === "number") {
+					let leader = lead >= 0 ? "B" : "W";
+					if (lead < 0) lead *= -1;
+					score = `${leader}+${lead.toFixed(2)}`;
 				}
 				return `<span class="info_item"><span class="info_label">${t.Score}:</span> ` +
 					`<span class="info_value">${pad(score, 8)}</span>${hide("score")}</span>`;		// 8: "B+100.00"
 			},
 			visits: () => {
 				let visits = "";
-				if (node.has_valid_analysis()) {
+				let inherited = override_moveinfo ? null : inherited_root(node);
+				if (inherited) {
+					visits = `${inherited.visits} inherited`;
+				} else if (node.has_valid_analysis()) {
 					visits = override_moveinfo && override_moveinfo.explored
 						? `${override_moveinfo.visits} explored`
 						: `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[0].visits} / ${node.analysis.rootInfo.visits}`;

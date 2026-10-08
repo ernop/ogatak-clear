@@ -39,7 +39,10 @@ improving the comprehensibility of the AI data shown during game review.
   `src/modules/explored.js` (explored moves: a child's own search standing
   in for its parent's estimate of that move; merged in by
   `utils.board_candidates`, Next Move Options, and Eval history;
-  requirements in `PRODUCT.md` item 13).
+  requirements in `PRODUCT.md` item 13; and `explored.inherited_root`,
+  inherited values: the parent's search of the move into a node standing in
+  for that node's own search, read by `Node.stored_score` /
+  `stored_winrate` and the info bar; `PRODUCT.md` item 14).
 
 ## Remotes
 

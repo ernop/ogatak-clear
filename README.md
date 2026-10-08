@@ -24,6 +24,10 @@ search's visits; moves that have since left the board are dashed. See the
 
 ## Recent additions
 
+* **Inherited values**: play a move KataGo already searched, and the new
+  position starts from that search. Its score, win rate, visits ("Visits:
+  80000 inherited"), and the Move Quality verdict appear at once, instead of
+  restarting from zero, until the position's own search has searched more.
 * **Explored moves**: play a move yourself, let KataGo search it, and step
   back. The move now shows the value that search found, even when the
   position's own search barely looked at it or never did.
@@ -183,6 +187,12 @@ the current candidate distribution, and directly comparable next moves._
   the engine, model, rules, komi, board, move history, and search settings
   match. This preserves analysis snapshots; it does not resume KataGo's
   terminated search tree.
+* A position reached by a move its parent's search looked at shows that
+  search's result for the move until its own search has more visits. KataGo
+  can't continue the parent's search tree, so the position's own search
+  starts from zero, but KataGo's cache keeps the parent's evaluations, so it
+  catches up faster than a cold search. Rules in [PRODUCT.md](PRODUCT.md),
+  "Inherited values".
 * The visit limit per position is independent of autoanalysis. It is set to
   any number in Settings, or from presets under **Analysis → Ponder visits**.
   A new limit applies to the running search immediately.

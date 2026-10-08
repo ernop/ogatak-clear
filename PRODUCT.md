@@ -314,8 +314,8 @@ reference.
      one, otherwise labelled; following it gives "■ value", "explored", and
      its visits.
    - Still P's own search only: Play best move, the candidate distribution,
-     Width and the costs saved in the SGF (`OGWI` / `OGWC`), the stored score
-     and winrate (`OGSC` / `SBKV`), and Eval history's lines.
+     Width and the costs saved in the SGF (`OGWI` / `OGWC`), P's score and
+     winrate (shown and saved as `OGSC` / `SBKV`), and Eval history's lines.
    - Limits: explored values exist only while both analyses are in memory.
      Analyses are not saved to the SGF, so reopening a file drops them. Only
      P's direct children count; exploring further below B does not change
@@ -324,6 +324,43 @@ reference.
      a first pass, to be tuned separately once the data path is settled
      (2026-10-07).
    - Logic: `src/modules/explored.js`, tested by `explored.test.js`.
+14. **Inherited values** (2026-10-07) — at P, KataGo searches 100,000
+   visits, 80,000 of them on move A, and Ernest plays A. The new position
+   must start from that search, not from a blank score and a visit count
+   climbing from zero: P's search of A is a search of the position after A
+   (item 13 read the other way).
+   - The position after A takes P's own entry for A (score, winrate,
+     visits) when A is a single move by the side to move at P, P's search
+     reported A, and either the new position has no search of its own, or
+     its own search used the same settings (item 13's check, including no
+     avoid / allow restriction on its search) and has fewer visits than P
+     gave A. Ties go to its own search. Once its own search passes that
+     count it takes over, the same "more visits wins" rule as item 13 and
+     the per-node snapshot rule.
+   - A node with no search in memory but with values saved in the SGF
+     (`SBKV` / `OGSC`, say from a reopened file) keeps them: their visit
+     counts are unknown. The values saved to the SGF stay the node's own
+     search's.
+   - Shown in: the info bar (Score, and "Visits: N inherited"), Move
+     Quality (the verdict compares P's value with A's value from the same
+     search, so it does not swing while the new search is young), the
+     before/after Score and Win rows, the Game Status chart, and the graph,
+     every reader of `Node.stored_score` / `stored_winrate`.
+   - Still the position's own search only: board candidates, Next Move
+     Options and its total-visits line, Eval history, Play best move, Width
+     and the SGF tags, and the Performance report.
+   - Engine side: KataGo's analysis mode starts every query with a new tree
+     and has no action to resume one, so the new position's own search
+     starts from zero. Its neural-network cache keeps the evaluations from
+     P's search (KataGo's docs name searches of nearby moves of one game as
+     a cache case), so that search re-covers P's ground faster than a cold
+     one. P's report summarises each move (value, visits, one best line);
+     it has no list of the replies, so the new position's candidates always
+     come from its own search.
+   - Limits: only P's own search counts, and only while P's analysis is in
+     memory.
+   - Logic: `explored.inherited_root`, read by `Node.stored_score`,
+     `Node.stored_winrate`, and the info bar; tested by `explored.test.js`.
 
 ### Current-line semantics
 
@@ -367,7 +404,9 @@ properties. Lower-visit refresh reports do not rewrite any of them.
 This protects analysis within the current Ogatak process. KataGo's
 neural-network evaluation cache also remains warm across queries, but
 stock KataGo cannot resume a terminated MCTS tree. Full cross-root MCTS
-continuation requires engine support beyond this snapshot rule.
+continuation requires engine support beyond this snapshot rule. A position
+reached by a move its parent searched starts from the parent's result for
+that move until its own search has more visits (item 14).
 
 ### Pondering limit
 
