@@ -55,6 +55,8 @@ improving the comprehensibility of the AI data shown during game review.
 - `origin` — github.com/ernop/ogatak-clear (public).
 - `upstream` — github.com/rooklift/ogatak. Pull his releases and merge; our
   changes are deliberately concentrated in few files to keep merges small.
+- `gh` has no default repository here and silently lists nothing; pass
+  `-R ernop/ogatak-clear` (e.g. `gh run list -R ernop/ogatak-clear`).
 
 ## Running
 

@@ -11,9 +11,10 @@ Ogatak. The detailed requirements and rationale are in
 
 ![ogatak-clear before Lee Sedol's move 78 against AlphaGo, showing Best + 5 candidates and Eval history](docs/screenshots/count-mode-eval-history-move-78.png)
 
-_Lee Sedol–AlphaGo Game 4, just before Lee's move 78, after a three-minute
-search. The board shows the engine's best move (`0`), the five closest
-alternatives, and the move Lee actually played (L11, red). Eval history, on
+_Lee Sedol–AlphaGo Game 4, just before Lee's move 78, after a
+three-and-a-half-minute search (142k visits). The board shows KataGo's top
+move (P8, the blue star), the five next-best moves by score with the points
+each loses against it, and the move Lee actually played (L11, red). Eval history, on
 the right, plots the value of every move shown during the search against the
 search's visits; moves that have since left the board are dashed. See the
 [source and analysis details](docs/sample-games/README.md)._
@@ -121,8 +122,9 @@ about 10 minutes at the engine's current 1,625 visits/s._
 
 _Hovering L11 shows its principal variation on the board and follows it in
 Eval history: its line is drawn on top and labelled with what KataGo said
-about it at each visits tick, and the header gives its value now, its change
-since 1k visits, and its own visits._
+about it at each visits tick. The band along the top gives its value now, its
+visits and share of the search, its policy prior, its rank by visits (11th,
+at best 4th), and how much worse it got for White since its line started._
 
 * A Move Report card charting how every candidate's value moves as the
   current position's search goes on, from 1,000 visits to however long you
@@ -154,12 +156,14 @@ since 1k visits, and its own visits._
   longer search until the new one overtakes it, just like the analysis
   itself.
 
-![The Eval history card following a move that has left the board](docs/screenshots/eval-history-card.png)
+![Hovering E8's label in Eval history shows its continuation on the board](docs/screenshots/eval-history-label-hover-e8.png)
 
-_Following E8 after it has left the board. KataGo's value for it improved by
-half a point for White from 1k visits to 377k, but other moves improved more,
-so it lost its Best + 5 place; its line stays, dashed, like every other move
-that was once shown._
+_Hovering E8's label in the chart. E8 is no longer among the Best + 5, so it
+has no circle and its line is dashed, but its continuation is on the board
+just as if E8 were hovered there. The band shows why it dropped: the network
+liked it at first sight (a 17% policy prior), and it was once KataGo's
+second-most-searched move, but the search now puts it fifth by visits and
+1.35 points worse for White than P8._
 
 ## The Move Report panel
 

@@ -25,6 +25,9 @@ Current Candidate Values and Eval history still require live analysis after
 reopening the file.
 
 The three move-78 screenshots (the position just before Lee Sedol's move 78)
-were taken from one live search of about three and a half minutes,
-366,000–377,000 visits, with **Display → Candidate moves shown** set to
-`Best + 5 moves`.
+were taken from one live search of three and a half minutes, 142,000 visits
+(the GPU was shared with another KataGo), with this analyzed file loaded and
+**Display → Candidate moves shown** set to `Best + 5 moves`. Another search of the same position with the same engine
+settings, run just before it, ended with N7 as KataGo's top
+move instead of P8 and with 140,000 visits. At this depth, moves within about
+half a point of each other can swap places from one search to the next.

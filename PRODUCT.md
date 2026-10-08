@@ -110,7 +110,10 @@ reference.
    fonts and stands out from the black numbers on every candidate colour;
    the costs column shows ★ in the same blue. (The 2026-10-07 "☻" was not
    distinctive enough.) The loss is always the mover's, so "Numbers from
-   Black's view" does not flip it.
+   Black's view" does not flip it. The board's minus sign is a deliberate
+   exception to framework rule 1, by Ernest's choice (2026-10-08): "-0.67"
+   is the conventional Delta notation, and a shown loss is never positive,
+   so the sign never needs converting.
    Why a move can score better than the reference, and why it still reads
    as losing nothing rather than re-basing every loss on it (2026-10-08):
    the reference is KataGo's top move, which KataGo ranks by visits and a
@@ -335,10 +338,11 @@ reference.
    - P's list keeps KataGo's order. An explored value replaces P's entry for
      the move in place; moves P's search never reported follow, most visits
      first.
-   - The reference (cost 0, shown as ☻) stays P's best move, using its
-     explored value when it was explored too. An explored move that scores
-     better also costs 0 and shows ☻, like any move better than the
-     reference (rule 5).
+   - The reference (cost 0, shown as the blue star) stays P's best move,
+     using its explored value when it was explored too. An explored move
+     that scores better also costs 0 and shows the star, like any move
+     better than the reference ("Loss notation" under "Next move options
+     and values").
    - Shown in: board candidates, drawn like any other candidate
      (2026-10-07). An explored move is a move like any other, and its
      value means what every candidate's value means, KataGo's evaluation
