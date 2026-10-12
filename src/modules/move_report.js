@@ -2027,13 +2027,14 @@ let move_report_prototype = {
 			ctx.stroke();
 		}
 
-		// Region labels...
+		// Region labels, at the left as in the quality chart: the chart ends at the
+		// current position, so its marker and "#N" always sit at the right edge.
 
 		ctx.fillStyle = "#e0b872ff";
-		ctx.textAlign = "right";
+		ctx.textAlign = "left";
 		ctx.textBaseline = "middle";
-		ctx.fillText("W ahead", x1 - 6, y0 + 8);
-		ctx.fillText("B ahead", x1 - 6, y1 - 8);
+		ctx.fillText("W ahead", x0 + 6, y0 + 8);
+		ctx.fillText("B ahead", x0 + 6, y1 - 8);
 
 		// Current position: same x as the quality chart, the point after this move.
 

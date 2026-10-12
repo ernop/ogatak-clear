@@ -191,7 +191,9 @@ reference.
    log ticks; the choice persists as `move_report_status_yscale`. Both
    charts share their centered-axis implementation, control placement,
    grid styling, current-position marker, and directional corner-label
-   placement. The current position is marked, with filled regions showing
+   placement: top-left and bottom-left (2026-10-12), since both charts end
+   at the current position, whose marker and "#N" hold the right edge.
+   The current position is marked, with filled regions showing
    who led. Click to jump to a move. Together with #6 this replaces the
    stock vertical strip graph; the two must never be merged, because "was
    that move good" and "who is winning" are different questions.
