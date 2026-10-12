@@ -42,13 +42,17 @@ improving the comprehensibility of the AI data shown during game review.
   line's label shows that move's PV on the board through
   `hub.show_chart_point` / `hub.chart_point`, which `hub.draw` uses when
   the mouse is off the board), and
-  `src/modules/explored.js` (explored moves: a child's own search standing
-  in for its parent's estimate of that move; merged in by
-  `utils.board_candidates`, Next Move Options, and Eval history;
-  requirements in `PRODUCT.md` item 13; and `explored.inherited_root`,
-  inherited values: the parent's search of the move into a node standing in
-  for that node's own search, read by `Node.stored_score` /
-  `stored_winrate` and the info bar; `PRODUCT.md` item 14).
+  `src/modules/explored.js` (explored moves: a child's value standing
+  in for its parent's estimate of that move, recursively down explored
+  lines; merged in by `utils.board_candidates`, Next Move Options, and
+  Eval history; requirements in `PRODUCT.md` item 13;
+  `explored.inherited_root`, inherited values: the parent's search of the
+  move into a node standing in for that node's own search, `PRODUCT.md`
+  item 14; and the best move, `best_index` / `node_best` / `best_info`:
+  one per position, picked by its own search, the star, the reference for
+  every cost, and the position's value read by `Node.stored_score` /
+  `stored_winrate`; `PRODUCT.md` "One best move". Lists are memoised per
+  node and invalidated by every `Node` change).
 
 ## Remotes
 

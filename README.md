@@ -12,9 +12,10 @@ Ogatak. The detailed requirements and rationale are in
 ![ogatak-clear before Lee Sedol's move 78 against AlphaGo, showing Best + 5 candidates and Eval history](docs/screenshots/count-mode-eval-history-move-78.png)
 
 _Lee Sedol–AlphaGo Game 4, just before Lee's move 78, after a
-three-and-a-half-minute search (142k visits). The board shows KataGo's top
-move (P8, the blue star), the five next-best moves by score with the points
-each loses against it, and the move Lee actually played (L11, red). Eval history, on
+three-and-a-half-minute search (142k visits). The board shows the best move
+(P8, the blue star: the move that leaves White the most points), the five
+next-best moves by score with the points each loses against it, and the move
+Lee actually played (L11, red). Eval history, on
 the right, plots the value of every move shown during the search against the
 search's visits; moves that have since left the board are dashed. See the
 [source and analysis details](docs/sample-games/README.md)._
@@ -25,6 +26,12 @@ search's visits; moves that have since left the board are dashed. See the
 
 ## Recent additions
 
+* **One best move**: each position has one best move, the one that leaves
+  the player to move the most points, and only it gets the star. It's the
+  first row of Next Move Options, and every cost is measured from it, so the
+  points a move shows on the board are the points its verdict reports once
+  it's played. Values found by searching deeper down a line count at every
+  position above it.
 * **Eval history labels you can hover and pin**: hover a line's label to see
   that move's continuation on the board, as if you'd hovered the move itself;
   click to pin it. A band across the top gives the move's visits, policy, and
@@ -40,8 +47,8 @@ search's visits; moves that have since left the board are dashed. See the
   move puts the next move of every line you've played from a position on the
   board and in Next Move Options, in either candidate mode.
 * **Loss labels**: a candidate 0.67 points worse than the best reads `-0.67`,
-  or `67` with Display → Use basis point display; one that loses nothing is
-  a blue star.
+  or `67` with Display → Use basis point display; the best move is a blue
+  star.
 * **Settings**: every setting on one page, with typed values, a find box,
   and the live board beside it. The visit limit per position accepts any
   number, and the page shows how long it takes at your engine's speed.
@@ -66,7 +73,8 @@ about 10 minutes at the engine's current 1,625 visits/s._
 * Open it with File → Settings... (`Ctrl+,`) or **⚙ settings** on the Move
   Report bar. Close it with Esc, `Ctrl+,`, or its close button.
 * Every setting from the menus is here, grouped into cards, along with
-  several that used to be `config.json`-only: the Best + N visit minimum,
+  several that used to be `config.json`-only: the visits a move needs to be
+  best or in Best + N,
   default rules and komi, and the variation-tree height. Each row shows its
   current value.
 * Numbers are typed (`1,000,000`, `1m`, `250k`); − / + and the arrow keys
@@ -80,24 +88,31 @@ about 10 minutes at the engine's current 1,625 visits/s._
 ## Candidate moves on the board
 
 * Each circle is labelled with its loss in points against the best available
-  move from here: `-0.67` means 0.67 points worse, and a blue star means
-  nothing lost. **Display → Use basis point display** writes the loss in
+  move from here: `-0.67` means 0.67 points worse, and the blue star marks
+  the best move. **Display → Use basis point display** writes the loss in
   hundredths of a point instead: `67`. Bigger is worse, and the colour says
   the same. It's never a visit count. Being behind in the game doesn't make
   the best available move look bad. Next Move Options' costs column uses the
   same numbers, without the minus sign.
-* A move that scores a little higher than KataGo's top choice also gets the
-  star, not `+0.12`: KataGo ranks moves mostly by win rate and how much it
-  has searched them, and a lightly searched move's score is the noisiest
-  number on the board.
+* The best move is the one that leaves the player to move the most points,
+  among moves with at least 50 visits (`candidate_min_visits`), so a move's
+  first noisy visits can't take the star. It's the only starred move, the
+  first row of Next Move Options, and what **Play best move** plays. It can
+  differ from KataGo's own first choice, which KataGo ranks mostly by win
+  rate and how much it searched each move. Another move that loses nothing
+  (a tie, or one that scores higher on fewer visits) reads `0.00`, never
+  `+0.12`.
+* A move's verdict once played is the cost it showed here: the position's
+  value before the move minus its value after, where a position's value is
+  its best move's.
 * **Display → Candidate moves shown** chooses which circles appear:
   * **Points from best** (`≤ 0.30` … `≤ 8.00`, or All; default `≤ 0.30`)
     shows every move within that many points of best, regardless of visits.
   * **Best + N moves** (`Best only`, `Best + 1 move` … `Best + 10 moves`;
     default N = 4) shows the best move and the N next-best moves by score.
     A move needs 50 visits (`candidate_min_visits`) before it can take one
-    of those places. Over 32 measured positions, that cut moves flashing in
-    and out from 346 to 42.
+    of those places, or be the best. Over 32 measured positions, that cut
+    moves flashing in and out from 346 to 42.
 * **Display → Show every variation's next move** (default on) adds, in
   either mode, the next move of every line that continues from here: the
   game's own next move and every variation you've played. Each shows its
@@ -111,7 +126,8 @@ about 10 minutes at the engine's current 1,625 visits/s._
   included, so a clearly worse move never shares a colour with a better one.
 * A move you played and searched yourself carries that search's value, once
   that search has more visits than the current position's search gave the
-  move. On the board it looks like any other candidate; **Display → Mark
+  move, including what you searched further down that line. On the board it
+  looks like any other candidate; **Display → Mark
   explored moves** draws it as a rounded square instead. Next Move Options
   marks it "explored". The rules are in [PRODUCT.md](PRODUCT.md),
   "Explored moves".
@@ -173,9 +189,9 @@ second-most-searched move, but the search now puts it fifth by visits and
   player names, a persistent strip prominently identifies Black and White,
   their ranks, the active player, and available game context.
 * Point values are labelled with the colour they favour (`B+2.30`, `W+0.50`),
-  and move quality is always unsigned points lost versus the best available
-  move: a verdict such as **MISTAKE** over
-  `lost 3.20 pts vs best — best was D4 (5 lines away)`.
+  and move quality is always unsigned points lost versus the best move, the
+  same number the move's cost showed before it was played: a verdict such as
+  **MISTAKE** over `lost 3.20 pts vs best — best was D4 (5 lines away)`.
 * The layout adjusts while the app runs: section order and visibility, card
   width, chart height, chart scales, and distribution size all persist in
   `config.json`. All text follows one app-wide six-step type scale set by

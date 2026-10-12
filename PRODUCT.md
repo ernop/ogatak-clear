@@ -78,9 +78,10 @@ reference.
 3. **Where the last move was** — highlighted on the board (stock behavior,
    kept) and stated in the panel: move number, color, coordinate.
 4. **How good the last move was** — verdict word, color-coded, with the
-   points it threw away vs the engine's best, AND how far (in board lines)
-   it was from the engine's preferred point, naming that point:
-   "MISTAKE — lost 3.20 pts. Best was D4 (5 lines away)."
+   points it threw away vs the best move (the star, "One best move"
+   below), AND how far (in board lines) it was from that move, naming it:
+   "MISTAKE — lost 3.20 pts. Best was D4 (5 lines away)." The points are
+   the cost the position before showed for the move.
    Scale: <0.5 excellent (green) / <1.5 good / <3 inaccuracy (yellow) /
    <6 mistake (orange) / >=6 blunder (red).
 5. **How the last move changed the likely outcome** — before -> after in
@@ -88,9 +89,11 @@ reference.
 6. **Next move options and values, ongoing** — the engine's current top
    candidates as a readable table: move, resulting score ("B+2.30"),
    winrate ("B 61%"), visits, and a "costs" column (points worse than the
-   top candidate, unsigned, per rule 2, in the loss notation below). Rows
-   clickable to play the move. Moves the user played and searched show
-   that search's values (item 13, "Explored moves").
+   best move, unsigned, per rule 2, in the loss notation below). Rows
+   clickable to play the move. The best move is always the first row,
+   then KataGo's order up to six rows (2026-10-12; before, the starred
+   move could be missing from the table). Moves the user played and
+   searched show that search's values (item 13, "Explored moves").
    The on-board colored candidate circles are stock behavior, kept — but
    the number shown on them is "Delta" (points lost vs the best available
    move), NOT visits: the visit count is irrelevant as a top-level item on
@@ -102,9 +105,12 @@ reference.
    of a point instead, unsigned, with no decimal point: 0.67 points worse
    than the best reads "67", 1.60 reads "160"; the sign, leading zero, and
    decimal point carry no information when a shown loss is never negative
-   and the colour already says how bad it is. In both notations a move that
-   loses nothing, to the hundredth, is a blue star, including a move that
-   scores better than the reference, so the board never shows "+0.12". On
+   and the colour already says how bad it is. In both notations the best
+   move ("One best move" below) is a blue star, and it is the only star
+   (2026-10-12). Any other move that loses nothing, to the hundredth,
+   reads "0.00" ("0" in basis points), including a move that scores better
+   than the best move (an explored move, or one with too few visits to be
+   best), so the board never shows "+0.12". On
    the board the star is drawn as a shape, not a font glyph, in blue
    (#2f7cf6) with a white rim, so it looks the same with any installed
    fonts and stands out from the black numbers on every candidate colour;
@@ -114,15 +120,10 @@ reference.
    exception to framework rule 1, by Ernest's choice (2026-10-08): "-0.67"
    is the conventional Delta notation, and a shown loss is never positive,
    so the sign never needs converting.
-   Why a move can score better than the reference, and why it still reads
-   as losing nothing rather than re-basing every loss on it (2026-10-08):
-   the reference is KataGo's top move, which KataGo ranks by visits and a
-   lower confidence bound on its utility (mostly winrate, plus a little
-   score), not by scoreLead. A lightly searched move can show a higher
-   scoreLead than the top move, and such values are the noisiest on the
-   board (Eval history shows them spiking and collapsing). Measuring every
-   loss from the highest raw scoreLead would let one such move shift every
-   number on the board, report after report.
+   From 2026-10-08 to 2026-10-12 the reference was KataGo's first move and
+   every move that lost nothing against it got the star, so two stars
+   could show at once (N7 and M15 before Lee's move 78), the second one
+   absent from Next Move Options. "One best move" replaced that.
    **Display → Candidate moves shown** chooses which circles appear. It
    offers two kinds of cutoff in one menu; exactly one item is checked.
    Points cutoffs never depend on how many engine visits a move
@@ -130,11 +131,12 @@ reference.
    - *Points from best* (`≤ 0.30` … `≤ 8.00`, or All): every candidate
      at most that many points worse than the best move. Default 0.30.
    - *Move count* (`Best only`, `Best + 1 move` … `Best + 10 moves`;
-     N defaults to 4) (2026-09-25): the engine's best move and the N
+     N defaults to 4) (2026-09-25): the best move and the N
      lowest-cost other moves among those with at least
      `candidate_min_visits` visits (default 50). Fewer than N appear when
      fewer moves qualify — early in a search or in forced positions. The
-     best move is shown however few visits it has. Rationale: a points
+     best move is always shown; the same minimum decides which move can
+     be best ("One best move"). Rationale: a points
      cutoff shows a crowd of near-equal circles in quiet positions (19 at
      ≤ 0.50 in the opening that prompted this) and only one in sharp
      ones; a count always gives the same number of alternatives beside
@@ -333,18 +335,22 @@ reference.
      search had, P's own value returns. The engine version is not compared:
      it reads 1.0.0 until KataGo answers its version query, so a search
      started in that moment would otherwise never match.
-   - An explored move takes that search's root result: score, winrate, and
-     visits. Its line of play is B followed by that search's best line, its
-     policy prior comes from P's search, and it carries that search's
-     ownership map (shown with per-move ownership on). It has no LCB.
+   - An explored move takes the value of the position after it: the score
+     and winrate of that position's best move as that position shows it
+     ("One best move"), so a move explored further down the line counts
+     at every position above it (2026-10-12; before, only the search
+     directly after B counted, at its root average). Its visits are the
+     search after B's own. Its line of play is B followed by that best
+     move's line, its policy prior comes from P's search, and it carries
+     that search's ownership map (shown with per-move ownership on). It
+     has no LCB.
    - P's list keeps KataGo's order. An explored value replaces P's entry for
      the move in place; moves P's search never reported follow, most visits
      first.
-   - The reference (cost 0, shown as the blue star) stays P's best move,
-     using its explored value when it was explored too. An explored move
-     that scores better also costs 0 and shows the star, like any move
-     better than the reference ("Loss notation" under "Next move options
-     and values").
+   - Which move is best (the star, cost 0) is decided by P's own search
+     alone; its explored value, when it was explored too, is the reference
+     costs are measured from. An explored move that scores better than
+     that costs 0 and reads "0.00", not the star ("One best move").
    - Shown in: board candidates, drawn like any other candidate
      (2026-10-07). An explored move is a move like any other, and its
      value means what every candidate's value means, KataGo's evaluation
@@ -363,13 +369,14 @@ reference.
      P's search), linked by a dotted line to the move's own line when it has
      one, otherwise labelled; following it gives "■ value", "explored", and
      its visits.
-   - Still P's own search only: Play best move, the candidate distribution,
-     Width and the costs saved in the SGF (`OGWI` / `OGWC`), P's score and
-     winrate (shown and saved as `OGSC` / `SBKV`), and Eval history's lines.
+   - Still P's own search only: which move is best (so which move Play
+     best move plays), the candidate distribution, Width and the costs
+     saved in the SGF (`OGWI` / `OGWC`), the score and winrate saved as
+     `OGSC` / `SBKV`, and Eval history's lines. P's shown score and
+     winrate are its best move's value, so they are explored when that
+     move was.
    - Limits: explored values exist only while both analyses are in memory.
-     Analyses are not saved to the SGF, so reopening a file drops them. Only
-     P's direct children count; exploring further below B does not change
-     B's value at P.
+     Analyses are not saved to the SGF, so reopening a file drops them.
    - The presentation above (shapes, labels, header text, chart marker) is
      a first pass, to be tuned separately once the data path is settled
      (2026-10-07).
@@ -392,13 +399,21 @@ reference.
      counts are unknown. The values saved to the SGF stay the node's own
      search's.
    - Shown in: the info bar (Score, and "Visits: N inherited"), Move
-     Quality (the verdict compares P's value with A's value from the same
-     search, so it does not swing while the new search is young), the
-     before/after Score and Win rows, the Game Status chart, and the graph,
-     every reader of `Node.stored_score` / `stored_winrate`.
+     Quality (the verdict is P's value minus A's, the cost P shows for A,
+     so it does not swing while the new search is young), the before/after
+     Score and Win rows, the Game Status chart, the graph, and the
+     Performance report's mean point loss: every reader of
+     `Node.stored_score` / `stored_winrate`.
    - Still the position's own search only: board candidates, Next Move
      Options and its total-visits line, Eval history, Play best move, Width
-     and the SGF tags, and the Performance report.
+     and the SGF tags, and the Performance report's other statistics.
+   - While the new position's value is inherited, its own board measures
+     costs from its own search's best move. A reply's verdict, measured
+     from the inherited value, can then differ from the cost the board
+     showed for it, until the position's own search passes the inherited
+     visit count. Accepted (2026-10-12): the inherited value is the better
+     estimate of the position, and the board shows what the position's
+     own search says about its moves.
    - Engine side: KataGo's analysis mode starts every query with a new tree
      and has no action to resume one, so the new position's own search
      starts from zero. Its neural-network cache keeps the evaluations from
@@ -411,6 +426,79 @@ reference.
      memory.
    - Logic: `explored.inherited_root`, read by `Node.stored_score`,
      `Node.stored_winrate`, and the info bar; tested by `explored.test.js`.
+
+### One best move (2026-10-12)
+
+Every display measures from one move per position, the best move, and
+gives each position one value. Before this, every move that lost nothing
+against KataGo's first move got the star, so two could show at once (N7
+and M15 before Lee's move 78), the second missing from Next Move Options;
+and a move's verdict, a difference of root averages, disagreed with the
+cost the board and the table showed for it (L11: 0.60 lost by the verdict,
+1.26 on the board). Ernest asked for one star and one number.
+
+- **The best move** (★): from the position's own search, the move that
+  leaves the side to move the most points (scoreLead) among the moves
+  KataGo reported with at least `candidate_min_visits` visits (default
+  50; 0 = every move qualifies). Ties go to the move KataGo lists first.
+  When no move qualifies, or none has a score, it is KataGo's first move.
+  Explored values never change which move is best. It is the only move
+  drawn with the star, the first row of Next Move Options, the move
+  **Play best move** plays, and the "best was" point of the verdict.
+- **Costs** are points worse than the best move's value as the position
+  shows it: its explored value when the position after it was searched
+  more (item 13), else its own entry. Mover's view, clamped at 0. Any
+  other move that loses nothing reads "0.00" ("0" in basis points): a
+  tie, an explored move that scores better, or a move that scores better
+  on too few visits to be best.
+- **The position's value** (the info bar's Score, Outcome's before →
+  after, Game Status, the graph): inherited while the position's own
+  search is smaller than its parent's search of the move (item 14), else
+  its best move's value as the position shows it, else the values saved
+  in the SGF. An explored move takes the value of the position after it,
+  so values pass up explored lines, however deep.
+- **The verdict** for a move is the parent's value minus the child's, for
+  the mover, clamped at 0: exactly the cost the parent shows for the
+  move. So the verdict, the board, the costs column, Outcome's before →
+  after, Move Quality, Game Status, and the Performance report's mean
+  point loss agree. The exception is item 14's accepted edge case: while
+  the parent's value is inherited.
+- **Saved values**: `OGSC` / `SBKV` and the costs in `OGWI` / `OGWC` are
+  the position's own search's best move's, never an explored or inherited
+  value (those belong to other searches). A file saved before 2026-10-12
+  holds KataGo's root averages instead; reanalysing rewrites them.
+- **Own search only**: the candidate distribution and Width (raw entries
+  against the raw best move), Eval history's lines, and the info bar's
+  "Visits: X / Y", where X is the best move's own visits.
+- **Engine play**: self-play and playing a colour play KataGo's first
+  choice, which weighs winrate as well as score; only Play best move
+  plays the star.
+- **Performance report**: mean point loss averages the verdicts; the
+  difficulty weighting measures from each position's own best move; "AI
+  top move" and "AI approved" count KataGo's own ranking.
+- Rationale: one reference makes every number agree. The cost a move
+  shows on the board is the loss its verdict reports once it is played.
+  The best is the most points rather than KataGo's first choice because
+  every display here is in points, and KataGo ranks moves by visits and a
+  lower confidence bound on its utility, mostly winrate, which in a won
+  or lost game barely separates moves that differ by points. The visit
+  minimum keeps a move's first noisy visits from taking the star (item
+  6's measurements); the 2026-10-08 design avoided that noise by
+  starring every move that beat KataGo's first, which gave the two
+  stars.
+- Known behaviour: the star can differ from KataGo's first choice, and
+  from one search of the same position to the next. Before Lee's move
+  78, one 160k-visit search starred M15 (B+12.48, 2.9k visits) while
+  KataGo searched N7 most (B+12.92, 16.7k visits), and M15 leaves White
+  a lower winrate than N7 (1.3% against 2.5%); another starred P8
+  (B+12.33, 11.6k visits), with N7 0.43 behind at 19.0k visits. Along a line where each best
+  move was played and searched deeper, Game Status is flat: the deeper
+  value passes up.
+- Logic: `explored.best_index`, `node_best`, and `best_info`
+  (`src/modules/explored.js`), read by `Node.stored_score` /
+  `stored_winrate`, `utils.select_candidates`, the board, the Move
+  Report, and the Performance report; tested in `explored.test.js` and
+  `utils.test.js`.
 
 ### Current-line semantics
 
@@ -540,8 +628,9 @@ Requirements now:
    or `"count"`), `cost_threshold` (points worse than the best available
    move; default 0.30; 0 = All), and `candidate_count` (moves beyond the
    best in count mode; default 4; a hand-edited N is added to the menu),
-   and `candidate_min_visits` (count mode's visit minimum; default 50;
-   0 = none; config.json only). Points cutoffs never depend on visits.
+   and `candidate_min_visits` (the visits a move needs to be the best move
+   or to take one of count mode's places; default 50; 0 = none).
+   Points cutoffs never depend on visits.
    With **Display → Show every variation's next move** on
    (`always_show_next_move_eval`, default true), the next move of every
    variation from this node is also drawn when it has a value, in either
@@ -587,18 +676,22 @@ The **variation tree** is not removed. It is a hideable pane (section id
   "BLACK"` (`src/modules/query.js`), so `rootInfo.winrate` / `scoreLead`
   and every `moveInfos[]` entry are Black-POV. Convert to labeled form at
   the display layer only.
-- Points lost by the move into node N = (N.parent root scoreLead) -
-  (N root scoreLead), negated when the mover was White, clamped at 0.
-  Root values assume best play, so this is "vs best". Works from stored
-  SGF tags (SBKV/OGSC) too, so quality survives engine restarts; only the
-  "best was <point>" detail needs the parent's full analysis in memory.
-- The mover's best alternative = parent's `moveInfos[0]`. Distance is
-  Chebyshev (max of dx, dy), reported as "lines".
+- Points lost by the move into node N = N.parent's value - N's value
+  (`Node.stored_score`: inherited, else the best move's value as the
+  position shows it, else the saved `OGSC`), negated when the mover was
+  White, clamped at 0 ("One best move"). It equals the cost N.parent
+  shows for the move. Works from stored SGF tags (SBKV/OGSC) too, so
+  quality survives engine restarts; only the "best was <point>" detail
+  needs the parent's full analysis in memory.
+- The mover's best alternative = the parent's best move
+  (`explored.best_info`). Distance is Chebyshev (max of dx, dy),
+  reported as "lines".
 - On-board candidate circles are selected only by score cost
   (`utils.select_candidates`, tested in `src/modules/utils.test.js`).
-  The engine's first-ranked move, `moveInfos[0]`, is always shown and is
-  the cost reference: cost is points worse than it, from the side to
-  play, clamped at 0, matching the panel's costs column. With a points
+  The best move (`explored.node_best`) is always shown and is the cost
+  reference: cost is points worse than its value as the position shows
+  it, from the side to play, clamped at 0, matching the panel's costs
+  column. With a points
   cutoff, every other move with a comparable score at or below
   `cost_threshold` appears, including symmetry-equivalent moves and
   candidates with few visits. In count mode the `candidate_count`

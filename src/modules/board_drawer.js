@@ -21,7 +21,7 @@ const {translate} = require("./translate");
 
 const colour_gradients = require("./colour_gradients");
 const eval_history = require("./eval_history");
-const {inherited_root, node_infos} = require("./explored");
+const {inherited_root, node_infos, node_best} = require("./explored");
 
 const {handicap_stones, moveinfo_filter, board_candidates, pad, new_2d_array, xy_to_s, float_to_hex_ff,
 	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html, info_cost, loss_text, ZERO_LOSS} = require("./utils");
@@ -1008,6 +1008,7 @@ let board_drawer_prototype = {
 		let filtered_infos = candidates.infos;
 		let costs = candidates.costs;
 		let gradient_cap = candidates.scale;
+		let best = filtered_infos[candidates.best];
 
 		if (filtered_infos.length > 0) {
 			eval_history.note_shown(node.analysis.id, filtered_infos.map(info => info.move), node.analysis.rootInfo.visits);
@@ -1051,7 +1052,7 @@ let board_drawer_prototype = {
 
 			if (!use_classic && costs[i] !== null) {
 				colour = colour_gradients.colour_for_cost(config.candidate_gradient, costs[i], gradient_cap);
-			} else if (info.order === 0) {
+			} else if (info === best) {
 				colour = active_is_b ? config.top_colour_black : config.top_colour_white;
 			} else {
 				colour = active_is_b ? config.off_colour_black : config.off_colour_white;
@@ -1061,14 +1062,14 @@ let board_drawer_prototype = {
 				o.fill = colour;
 			} else if (colour.length === 9 && colour.endsWith("00")) {
 				o.fill = null;		// the colour is transparent, as a special case we never do alpha adjustment for these, or even draw them
-			} else if (info.order === 0 || !config.visit_colours) {
+			} else if (info === best || !config.visit_colours) {
 				o.fill = colour;
 			} else {
-				o.fill = colour.slice(0, 7) + float_to_hex_ff(colour_curve(info.visits / filtered_infos[0].visits));
+				o.fill = colour.slice(0, 7) + float_to_hex_ff(colour_curve(info.visits / best.visits));
 			}
 
 			for (let nt of number_types) {
-				let z = string_from_info(info, node, nt, needs_flip, filtered_infos[0]);
+				let z = string_from_info(info, node, nt, needs_flip, best);
 				if (z === "?") {
 					got_bad_analysis_text = true;
 				}
@@ -1289,7 +1290,7 @@ let board_drawer_prototype = {
 				} else if (node.has_valid_analysis()) {
 					visits = override_moveinfo && override_moveinfo.explored
 						? `${override_moveinfo.visits} explored`
-						: `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[0].visits} / ${node.analysis.rootInfo.visits}`;
+						: `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[node_best(node)].visits} / ${node.analysis.rootInfo.visits}`;
 				}
 				let digits = String(Math.max(config.ponder_visits, config.autoanalysis_visits)).length;		// Room for "limit / limit".
 				return `<span class="info_item"><span class="info_label">${t.Visits}:</span> ` +
@@ -1382,8 +1383,9 @@ function mark_colour_from_state(state, dflt) {
 
 function string_from_info(info, node, type, flip, best) {
 
-	// best: the entry Delta is measured from, infos[0] of the list being drawn.
-	// Delta is the mover's points loss (utils.loss_text), so it never flips.
+	// best: the best move's entry (explored.best_info), which Delta is measured
+	// from and which alone gets the star. Delta is the mover's points loss
+	// (utils.loss_text), so it never flips.
 	// Explored entries (explored.js) have no LCB, no share of this position's
 	// visits, and no engine rank when this position's search never reported
 	// them; those show "—".
@@ -1443,7 +1445,7 @@ function string_from_info(info, node, type, flip, best) {
 			if (typeof info.scoreLead !== "number" || typeof best.scoreLead !== "number") {		// See above.
 				return "??";						// Don't return "?" which is special...
 			}
-			return loss_text(info_cost(info, best.scoreLead, node.get_board().active === "b"), config.basis_point_display, true);
+			return loss_text(info_cost(info, best.scoreLead, node.get_board().active === "b"), config.basis_point_display, true, info === best);
 		case "Visits":
 			if (info.visits > 9950) {
 				return (info.visits / 1000).toFixed(0) + "k";

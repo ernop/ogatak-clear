@@ -752,10 +752,13 @@ let move_report_prototype = {
 			return [];
 		}
 
+		// This position's own search only: the best move's own entry, never its
+		// explored value, is the reference here.
+
 		let infos = limit === null
 			? node.analysis.moveInfos
 			: node.analysis.moveInfos.slice(0, limit);
-		let best_lead = node.analysis.moveInfos[0].scoreLead;
+		let best_lead = node.analysis.moveInfos[explored.node_best(node)].scoreLead;
 		let active_is_b = node.get_board().active === "b";
 
 		return infos.map(info => {
@@ -764,10 +767,12 @@ let move_report_prototype = {
 	},
 
 	// Signed points change caused by the move leading into this node, from the
-	// MOVER's side: negative = the move lost points vs best play, positive = the
-	// position turned out better than the prior estimate. Root scores assume
-	// best play, so (child - parent) from the mover's side is exactly this.
-	// Works from stored SGF tags too. Returns null if unknowable.
+	// MOVER's side: negative = the move lost points vs the best move, positive =
+	// the position turned out better than the prior estimate. A position's value
+	// is its best move's (Node.stored_score), and the parent lists the played
+	// move at this node's value (explored / inherited), so the loss equals the
+	// cost the parent shows for the move. Works from stored SGF tags too.
+	// Returns null if unknowable.
 
 	points_delta: function(node) {
 		if (!node.parent || node.move_count() !== 1) {
@@ -908,19 +913,19 @@ let move_report_prototype = {
 			if (lost !== null) {
 
 				let [label, klass] = this.verdict(lost);
-				let lost_str = lost < 0.005 ? "as good as the engine's best" : `lost ${lost.toFixed(2)} pts vs best`;
+				let lost_str = lost < 0.005 ? "as good as the best move" : `lost ${lost.toFixed(2)} pts vs best`;
 				parts.push(`<div class="mr_verdict ${klass}">${label}</div>`);
 
 				// Where was the best move, and how far away did the mover play?
 
 				let best_detail = "";
-				if (node.parent.has_valid_analysis() && node.parent.analysis.moveInfos.length > 0) {
-					let best_gtp = node.parent.analysis.moveInfos[0].move;
+				if (node.parent.has_valid_analysis()) {
+					let best_gtp = explored.best_info(node.parent).move;
 					let best_s = board.parse_gtp_move(best_gtp);
 					let played_c = node.parent.canonical_symmetry(s);
 					if (best_s !== "" && s !== "" && gtp !== "pass") {
 						if (best_s === played_c || best_s === s) {
-							best_detail = `played the engine's top choice`;
+							best_detail = `played the best move`;
 						} else {
 							let dx = Math.abs(best_s.charCodeAt(0) - s.charCodeAt(0));
 							let dy = Math.abs(best_s.charCodeAt(1) - s.charCodeAt(1));
@@ -928,7 +933,7 @@ let move_report_prototype = {
 							best_detail = `best was <span class="mr_coord">${best_gtp}</span> (${dist} ${dist === 1 ? "line" : "lines"} away)`;
 						}
 					} else if (best_gtp === "pass" && gtp === "pass") {
-						best_detail = `played the engine's top choice`;
+						best_detail = `played the best move`;
 					} else if (best_gtp) {
 						best_detail = `best was <span class="mr_coord">${best_gtp}</span>`;
 					}
@@ -982,14 +987,15 @@ let move_report_prototype = {
 
 		if (node.has_valid_analysis()) {
 
-			// Costs are vs the best AVAILABLE move (infos[0]), never vs the
-			// global board value: if we're losing badly, the best we can do
-			// from here is the reference point (PRODUCT.md rule 5)...
+			// Costs are vs the best AVAILABLE move (explored.best_info, the
+			// first row), never vs the global board value: if we're losing
+			// badly, the best we can do from here is the reference point
+			// (PRODUCT.md rule 5)...
 
 			let infos = options_table_infos(node);
-			let best_lead = infos[0].scoreLead;
+			let best = explored.best_info(node);
 			let active_is_b = node.get_board().active === "b";
-			let costs = infos.map(info => info_cost(info, best_lead, active_is_b));
+			let costs = infos.map(info => info_cost(info, best.scoreLead, active_is_b));
 
 			// Gradient cap: worst displayed cost, floored at 2 pts so near-equal
 			// options stay near-equal in color (PRODUCT.md rule 6)...
@@ -1002,7 +1008,7 @@ let move_report_prototype = {
 			for (let i = 0; i < infos.length; i++) {
 
 				let info = infos[i];
-				let cost_str = loss_text(costs[i], config.basis_point_display);
+				let cost_str = loss_text(costs[i], config.basis_point_display, false, info === best);
 				if (cost_str === ZERO_LOSS) {
 					cost_str = `<span class="mr_zero_loss">${ZERO_LOSS}</span>`;
 				}
@@ -2149,7 +2155,7 @@ let move_report_prototype = {
 		let merged = explored.node_infos(node);
 		let infos = new Map(node.analysis.moveInfos.map(info => [info.move, info]));
 		let shown_infos = new Map(merged.map(info => [info.move, info]));
-		let best_lead = merged[0].scoreLead;
+		let best_lead = explored.best_info(node).scoreLead;
 
 		let tags = Object.create(null);
 		node.children.forEach((child, i) => {

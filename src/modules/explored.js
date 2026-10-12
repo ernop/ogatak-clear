@@ -7,11 +7,50 @@
 //
 // Inherited values (PRODUCT.md, "Inherited values") read the same fact the other
 // way: the parent's search of a move is a search of the position after it.
+//
+// The best move (PRODUCT.md, "One best move"): a position's own search picks it,
+// and its value, explored when the position after it was searched more, is the
+// position's value. An explored move therefore carries the value of the
+// position after it, which can itself come from a search further down the line.
 
 const SETTINGS_KEYS = ["rules", "komi", "boardXSize", "boardYSize", "overrideSettings"];
 const SETTINGS_CACHE_LIMIT = 1000;
 
 const settings_cache = new Map();		// analysis context --> settings_of() result
+
+// Per-node lists and best moves, valid until any node changes (Node calls
+// invalidate()) or the visit minimum does. Values pass up explored lines, so
+// one report can change every ancestor's list.
+
+let generation = 0;
+const memo = new WeakMap();				// node --> {generation, min_visits, infos, best}
+
+function invalidate() {
+	generation++;
+}
+
+function min_visits() {
+	let n = config.candidate_min_visits;
+	return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+// Index of the best move in infos (Black-POV moveInfos): the entry leaving the
+// side to move the most points among those with at least min visits, ties to
+// the earlier entry; KataGo's first entry when none qualifies. -1 when empty.
+
+function best_index(infos, active_is_b, min) {
+	let best = -1;
+	for (let i = 0; i < infos.length; i++) {
+		let lead = infos[i].scoreLead;
+		if (typeof lead !== "number" || (min > 0 && !(infos[i].visits >= min))) {
+			continue;
+		}
+		if (best === -1 || (active_is_b ? lead > infos[best].scoreLead : lead < infos[best].scoreLead)) {
+			best = i;
+		}
+	}
+	return best !== -1 ? best : (infos.length > 0 ? 0 : -1);
+}
 
 // The parts of an analysis context (query.js) that must match between two
 // searches for one to stand in for the other: the engine and every search
@@ -138,8 +177,11 @@ function move_into(node) {
 	return node.has_key(key) ? board.gtp(node.get(key)) : null;
 }
 
-// Root results of node's children that are single moves by the side to move,
-// searched with the same settings as node's own search.
+// Results of node's children that are single moves by the side to move,
+// searched with the same settings as node's own search and with more visits
+// than it gave the move (only those can replace an entry). Each carries the
+// child's value, its best move as the child lists it, so what was explored
+// below the child counts too; visits are the child's own search's.
 
 function child_results(node) {
 
@@ -154,15 +196,19 @@ function child_results(node) {
 		if (move === null || !child.has_valid_analysis() || !same_settings(node.analysis_context, child.analysis_context)) {
 			continue;
 		}
-		let root = child.analysis.rootInfo;
-		let top = child.analysis.moveInfos[0];
+		let visits = child.analysis.rootInfo.visits;
+		let own = node.analysis.moveInfos.find(o => o.move === move);
+		if (own && !(visits > own.visits)) {
+			continue;
+		}
+		let best = best_info(child);
 		ret.push({
 			move: move,
-			visits: root.visits,
-			winrate: root.winrate,
-			scoreLead: root.scoreLead,
-			scoreSelfplay: root.scoreSelfplay,
-			pv: top && Array.isArray(top.pv) ? top.pv : [],
+			visits: visits,
+			winrate: best.winrate,
+			scoreLead: best.scoreLead,
+			scoreSelfplay: best.scoreSelfplay,
+			pv: Array.isArray(best.pv) ? best.pv : [],
 			ownership: child.analysis.ownership,
 		});
 	}
@@ -170,20 +216,16 @@ function child_results(node) {
 	return ret;
 }
 
-// node's moveInfos with its explored children merged in. Without explored
-// children this is node.analysis.moveInfos itself.
+function entry(node) {
 
-function node_infos(node) {
-
-	if (!node.has_valid_analysis()) {
-		return [];
+	let min = min_visits();
+	let m = memo.get(node);
+	if (m && m.generation === generation && m.min_visits === min) {
+		return m;
 	}
 
+	let own = node.analysis.moveInfos;
 	let results = child_results(node);
-	if (results.length === 0) {
-		return node.analysis.moveInfos;
-	}
-
 	let board = node.get_board();
 	let policy = node.analysis.policy;
 
@@ -198,7 +240,40 @@ function node_infos(node) {
 		return typeof policy[i] === "number" && policy[i] >= 0 ? policy[i] : undefined;
 	};
 
-	return merge(node.analysis.moveInfos, results, prior_of);
+	m = {
+		generation: generation,
+		min_visits: min,
+		infos: results.length === 0 ? own : merge(own, results, prior_of),
+		best: best_index(own, board.active === "b", min),
+	};
+	memo.set(node, m);
+	return m;
+}
+
+// node's moveInfos with its explored children merged in. Without explored
+// children this is node.analysis.moveInfos itself.
+
+function node_infos(node) {
+	return node.has_valid_analysis() ? entry(node).infos : [];
+}
+
+// The index of node's best move, chosen from its own search: the same in
+// node_infos(node) and node.analysis.moveInfos, since explored values replace
+// entries in place. -1 without a search.
+
+function node_best(node) {
+	return node.has_valid_analysis() ? entry(node).best : -1;
+}
+
+// node's best move as node_infos(node) lists it, explored value included: the
+// value the position's own search leads to. Null without a search.
+
+function best_info(node) {
+	if (!node.has_valid_analysis()) {
+		return null;
+	}
+	let m = entry(node);
+	return m.infos[m.best];
 }
 
 // The parent's own search of the move into node, as a root of node's position:
@@ -231,4 +306,4 @@ function inherited_root(node) {
 	return {visits: info.visits, winrate: info.winrate, scoreLead: info.scoreLead, scoreSelfplay: info.scoreSelfplay};
 }
 
-module.exports = {same_settings, merge, child_results, node_infos, inherited_root};
+module.exports = {same_settings, merge, child_results, node_infos, inherited_root, best_index, node_best, best_info, min_visits, invalidate};

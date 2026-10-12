@@ -68,7 +68,7 @@ exports.defaults = {
 	"candidate_filter": "cost",					// "cost": use cost_threshold. "count": best move + candidate_count lowest-cost moves.
 	"cost_threshold": 0.3,						// Max points worse than the best available move; independent of visits.
 	"candidate_count": 4,						// Count mode: how many moves beyond the best.
-	"candidate_min_visits": 50,					// Count mode: visits a move needs to take one of those places. 0 = no minimum.
+	"candidate_min_visits": 50,					// Visits a move needs to be the best move (explored.best_index) or take a count-mode place. 0 = no minimum.
 	"always_show_next_move_eval": true,			// Display → Show every variation's next move: either mode, plus Next Move Options.
 	"mark_explored_moves": false,				// Draw explored moves (explored.js) as rounded squares instead of circles.
 	"basis_point_display": false,				// Losses as hundredths of a point ("67") instead of points ("-0.67"); see utils.loss_text.

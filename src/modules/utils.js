@@ -140,19 +140,20 @@ exports.info_cost = function(info, best_lead, active_is_b) {
 // A cost as the board (Delta) and Next Move Options write it. Conventionally in
 // points: "-0.67" on the board (signed), "0.67" in the costs column, whose
 // heading already says loss. With basis point display (config), hundredths of
-// a point, unsigned: "67". Either way a move that loses nothing to the
-// hundredth, including one scoring better than the reference, is ZERO_LOSS,
-// which the board draws as a blue star rather than this character.
+// a point, unsigned: "67". The best move is ZERO_LOSS, which the board draws as
+// a blue star rather than this character; any other move that loses nothing to
+// the hundredth (a tie, an explored value, or a move with too few visits to be
+// the best) reads "0.00", or "0", so exactly one move carries the star.
 
 exports.ZERO_LOSS = "★";
 
-exports.loss_text = function(cost, basis = false, signed = false) {
+exports.loss_text = function(cost, basis = false, signed = false, is_best = false) {
 	if (typeof cost !== "number") {
 		return "";
 	}
 	let hundredths = Math.round(cost * 100);
 	if (hundredths <= 0) {
-		return exports.ZERO_LOSS;
+		return is_best ? exports.ZERO_LOSS : (basis ? "0" : "0.00");
 	}
 	if (basis) {
 		return hundredths.toString();
@@ -194,8 +195,9 @@ exports.next_move_gtp_set = function(node, with_pass = false) {
 };
 
 // Which moveInfos the board draws, their costs, and the cost at which the
-// candidate gradient reaches its end colour. infos[0] (the reference best move)
-// is always kept and stays first; the rest keep engine order.
+// candidate gradient reaches its end colour. infos[best] (explored.node_best,
+// the reference every cost is measured from) is always kept and comes first,
+// as ret.infos[ret.best]; the rest keep engine order.
 //
 // opts.mode "cost": every move within opts.threshold points (0 = All). The
 // cutoff is the gradient's scale, so an added next move past it takes the end colour.
@@ -206,17 +208,17 @@ exports.next_move_gtp_set = function(node, with_pass = false) {
 // use, the scale is the worst move shown, added next moves included, so a worse
 // played move never shares a colour with a better candidate.
 
-exports.select_candidates = function(infos, active_is_b, next_gtp, opts) {
+exports.select_candidates = function(infos, best, active_is_b, next_gtp, opts) {
 
-	let best_lead = infos.length > 0 ? infos[0].scoreLead : null;
+	let best_lead = best >= 0 ? infos[best].scoreLead : null;
 	let costs = infos.map(info => exports.info_cost(info, best_lead, active_is_b));
-	let keep = infos.map((info, i) => i === 0);
+	let keep = infos.map((info, i) => i === best);
 
 	if (opts.mode === "count") {
 		let rank_cost = (i) => costs[i] === null ? Infinity : costs[i];
 		let rest = [];
-		for (let i = 1; i < infos.length; i++) {
-			if (String(infos[i].move).toLowerCase() !== "pass" && !(infos[i].visits < opts.min_visits)) {
+		for (let i = 0; i < infos.length; i++) {
+			if (i !== best && String(infos[i].move).toLowerCase() !== "pass" && !(infos[i].visits < opts.min_visits)) {
 				rest.push(i);
 			}
 		}
@@ -225,15 +227,21 @@ exports.select_candidates = function(infos, active_is_b, next_gtp, opts) {
 			keep[i] = true;
 		}
 	} else {
-		for (let i = 1; i < infos.length; i++) {
-			keep[i] = opts.threshold === 0 || (costs[i] !== null && costs[i] <= opts.threshold + 1e-9);
+		for (let i = 0; i < infos.length; i++) {
+			keep[i] = keep[i] || opts.threshold === 0 || (costs[i] !== null && costs[i] <= opts.threshold + 1e-9);
 		}
 	}
 
-	let ret = {infos: [], costs: [], scale: 0};
+	let ret = {infos: [], costs: [], scale: 0, best: -1};
+
+	if (best >= 0) {
+		ret.infos.push(infos[best]);
+		ret.costs.push(costs[best]);
+		ret.best = 0;
+	}
 
 	for (let i = 0; i < infos.length; i++) {
-		if (keep[i] || (next_gtp && next_gtp[infos[i].move])) {
+		if (i !== best && (keep[i] || (next_gtp && next_gtp[infos[i].move]))) {
 			ret.infos.push(infos[i]);
 			ret.costs.push(costs[i]);
 		}
@@ -254,12 +262,12 @@ exports.select_candidates = function(infos, active_is_b, next_gtp, opts) {
 exports.board_candidates = function(node) {
 
 	if (!node.has_valid_analysis()) {
-		return {infos: [], costs: [], scale: 0.5};
+		return {infos: [], costs: [], scale: 0.5, best: -1};
 	}
 
 	let next_gtp = config.always_show_next_move_eval ? exports.next_move_gtp_set(node) : null;
 
-	return exports.select_candidates(explored.node_infos(node), node.get_board().active === "b", next_gtp, {
+	return exports.select_candidates(explored.node_infos(node), explored.node_best(node), node.get_board().active === "b", next_gtp, {
 		mode: config.candidate_filter,
 		threshold: config.cost_threshold,
 		count: config.candidate_count,
@@ -267,9 +275,10 @@ exports.board_candidates = function(node) {
 	});
 };
 
-// Next Move Options rows: the first six moves in KataGo's order, then, with
-// always_show_next_move_eval on, every other move played from here that has a
-// value, passes included.
+// Next Move Options rows: the best move, then KataGo's order up to six rows,
+// then, with always_show_next_move_eval on, every other move played from here
+// that has a value, passes included. The best move is always a row, so the one
+// star on the board is always in the table.
 
 exports.options_table_infos = function(node) {
 
@@ -278,9 +287,16 @@ exports.options_table_infos = function(node) {
 	}
 
 	let infos = explored.node_infos(node);
+	let best = explored.node_best(node);
 	let next_gtp = config.always_show_next_move_eval ? exports.next_move_gtp_set(node, true) : null;
 
-	return infos.slice(0, 6).concat(next_gtp ? infos.slice(6).filter(info => next_gtp[info.move]) : []);
+	let rows = [infos[best]];
+	for (let i = 0; i < infos.length; i++) {
+		if (i !== best && (rows.length < 6 || (next_gtp && next_gtp[infos[i].move]))) {
+			rows.push(infos[i]);
+		}
+	}
+	return rows;
 };
 
 exports.moveinfo_filter = function(node) {

@@ -6,8 +6,15 @@ global.config = {};
 
 const new_node = require("./node");
 const {ANALYSIS_CONTEXT_PROPERTY, analysis_context} = require("./query");
-const {same_settings, merge, child_results, node_infos, inherited_root} = require("./explored");
-const {select_candidates, next_move_gtp_set, board_candidates, options_table_infos} = require("./utils");
+const {same_settings, merge, child_results, node_infos, inherited_root, best_index, node_best, best_info} = require("./explored");
+const {select_candidates, next_move_gtp_set, board_candidates, options_table_infos, info_cost, loss_text, ZERO_LOSS} = require("./utils");
+
+// move_report.points_lost (the verdict), which needs a DOM to load: the mover's
+// drop in position value, at least 0.
+const points_lost = (node) => {
+	let delta = node.stored_score() - node.parent.stored_score();
+	return Math.max(0, node.has_key("B") ? -delta : delta);
+};
 
 const ENGINE = {mode: "analysis", filepath: "/k/katago", engineconfig: "/k/a.cfg", weights: "/k/net.bin.gz", version: [1, 16, 0]};
 
@@ -123,9 +130,9 @@ analyse(p, at_p, {
 assert.strictEqual(node_infos(p), p.analysis.moveInfos);		// No explored children yet.
 
 let d4 = child(p, "W", "dp");
-analyse(d4, at_b, {
-	id: "d4", rootInfo: {visits: 1000, winrate: 0.47, scoreLead: 1.0, scoreSelfplay: 1.3},
-	moveInfos: [{move: "Q3", order: 0, visits: 700, winrate: 0.47, scoreLead: 0.6, pv: ["Q3", "R4"]}],
+analyse(d4, at_b, {		// Its value is its best move's, Q3's, not the root average.
+	id: "d4", rootInfo: {visits: 1000, winrate: 0.49, scoreLead: 1.4, scoreSelfplay: 1.6},
+	moveInfos: [{move: "Q3", order: 0, visits: 700, winrate: 0.47, scoreLead: 1.0, scoreSelfplay: 1.3, pv: ["Q3", "R4"]}],
 	ownership: [0.5],
 });
 
@@ -149,7 +156,7 @@ analyse(wrong_colour, context([["B", "Q16"], ["B", "D17"]]), {
 
 let passed = child(p, "W", "");
 analyse(passed, context([["B", "Q16"], ["W", "pass"]]), {
-	id: "pass", rootInfo: {visits: 300, winrate: 0.9, scoreLead: 9.0}, moveInfos: [{move: "D4", order: 0, visits: 300, pv: ["D4"]}],
+	id: "pass", rootInfo: {visits: 300, winrate: 0.9, scoreLead: 9.0}, moveInfos: [{move: "D4", order: 0, visits: 300, winrate: 0.9, scoreLead: 9.0, pv: ["D4"]}],
 });
 
 assert.deepStrictEqual(child_results(p).map(r => [r.move, r.visits]), [["D4", 1000], ["pass", 300]]);
@@ -166,7 +173,8 @@ assert.strictEqual(infos[3].prior, 0.0001);
 // With every variation's next move shown (the default), the explored move is drawn.
 // White to play, so a higher Black-POV lead costs White: D4 leaves Black 0.2 more than Q4.
 
-let shown = select_candidates(infos, false, next_move_gtp_set(p), {mode: "count", threshold: 0.3, count: 0, min_visits: 50});
+assert.strictEqual(node_best(p), 0);
+let shown = select_candidates(infos, node_best(p), false, next_move_gtp_set(p), {mode: "count", threshold: 0.3, count: 0, min_visits: 50});
 assert.deepStrictEqual(moves(shown.infos), ["Q4", "D16", "D4"]);
 assert.ok(Math.abs(shown.costs[2] - 0.2) < 1e-9);
 
@@ -201,10 +209,10 @@ child(q, "W", "cc");						// C17: q's eighth move, played but never searched.
 child(q, "W", "jj");						// K10: never reported or searched, so it has no value.
 child(q, "B", "qp");						// R4 by Black: not one of White's options.
 analyse(child(q, "W", "jp"), context([["B", "D16"], ["W", "K4"]]), {		// K4: explored, 0.2 worse than Q16.
-	id: "k4", rootInfo: {visits: 1000, winrate: 0.5, scoreLead: 0.7}, moveInfos: [{move: "Q16", order: 0, visits: 600, pv: ["Q16"]}],
+	id: "k4", rootInfo: {visits: 1000, winrate: 0.5, scoreLead: 0.7}, moveInfos: [{move: "Q16", order: 0, visits: 600, winrate: 0.5, scoreLead: 0.7, pv: ["Q16"]}],
 });
 analyse(child(q, "W", ""), context([["B", "D16"], ["W", "pass"]]), {
-	id: "q-pass", rootInfo: {visits: 300, winrate: 0.9, scoreLead: 9.0}, moveInfos: [{move: "Q16", order: 0, visits: 300, pv: ["Q16"]}],
+	id: "q-pass", rootInfo: {visits: 300, winrate: 0.9, scoreLead: 9.0}, moveInfos: [{move: "Q16", order: 0, visits: 300, winrate: 0.9, scoreLead: 9.0, pv: ["Q16"]}],
 });
 
 assert.deepStrictEqual(Object.keys(next_move_gtp_set(q)).sort(), ["C17", "K10", "K4"]);
@@ -259,17 +267,17 @@ analyse(d16, at_d16, {id: "d16", rootInfo: {visits: 500, winrate: 0.50, scoreLea
 assert.strictEqual(inherited_root(d16).visits, 80000);
 assert.strictEqual(d16.stored_score(), 1.6);
 
-analyse(d16, at_d16, {id: "d16", rootInfo: {visits: 80000, winrate: 0.54, scoreLead: 1.2}, moveInfos: [{move: "Q16", order: 0, visits: 70000, pv: ["Q16"]}]});
-assert.strictEqual(inherited_root(d16), null);		// Ties go to the position's own search.
-assert.strictEqual(d16.stored_score(), 1.2);
-assert.strictEqual(d16.stored_winrate(), 0.54);
+analyse(d16, at_d16, {id: "d16", rootInfo: {visits: 80000, winrate: 0.54, scoreLead: 1.2}, moveInfos: [{move: "Q16", order: 0, visits: 70000, winrate: 0.53, scoreLead: 1.25, pv: ["Q16"]}]});
+assert.strictEqual(inherited_root(d16), null);		// Ties go to the position's own search: its best move.
+assert.strictEqual(d16.stored_score(), 1.25);
+assert.strictEqual(d16.stored_winrate(), 0.53);
 
 let d4_komi = child(r, "W", "dp");			// Searched at another komi: not comparable, so its own search stands.
 analyse(d4_komi, context([["B", "Q4"], ["W", "D4"]], {komi: 6.5}), {
-	id: "d4k", rootInfo: {visits: 200, winrate: 0.4, scoreLead: 3.3}, moveInfos: [{move: "Q16", order: 0, visits: 150, pv: []}],
+	id: "d4k", rootInfo: {visits: 200, winrate: 0.4, scoreLead: 3.3}, moveInfos: [{move: "Q16", order: 0, visits: 150, winrate: 0.41, scoreLead: 3.4, pv: []}],
 });
 assert.strictEqual(inherited_root(d4_komi), null);
-assert.strictEqual(d4_komi.stored_score(), 3.3);
+assert.strictEqual(d4_komi.stored_score(), 3.4);
 
 let q16_avoiding = child(r, "W", "pd");		// Its own search was told to avoid moves, as the user asked.
 analyse(q16_avoiding, context([["B", "Q4"], ["W", "Q16"]], {avoidMoves: [{player: "B", moves: ["C3"], untilDepth: 1}]}), {
@@ -307,5 +315,131 @@ assert.strictEqual(inherited_root(child(child(root, "B", "aa"), "W", "bb")), nul
 assert.strictEqual(node_infos(p)[1].explored, undefined);
 assert.strictEqual(inherited_root(d4).visits, 1800);
 assert.strictEqual(d4.stored_score(), 0.7);
+
+// ------------------------------------------------------------------------------------------------
+// best_index: the most points for the side to move among moves with enough visits, ties to the
+// earlier entry, else KataGo's first.
+
+let ranked = [
+	{move: "A1", visits: 5000, scoreLead: 1.0},
+	{move: "B1", visits: 3000, scoreLead: 1.3},
+	{move: "C1", visits: 20, scoreLead: 2.0},
+	{move: "D1", visits: 3000, scoreLead: 1.3},
+	{move: "E1", visits: 900, scoreLead: 0.4},
+];
+assert.strictEqual(best_index(ranked, true, 50), 1);			// C1 scores more, on too few visits; D1 ties B1.
+assert.strictEqual(best_index(ranked, true, 0), 2);
+assert.strictEqual(best_index(ranked, false, 50), 4);
+assert.strictEqual(best_index(ranked, true, 10000), 0);			// Nothing qualifies: KataGo's first.
+assert.strictEqual(best_index([{move: "A1", visits: 9}, {move: "B1", visits: 9}], true, 0), 0);	// No scores: KataGo's first.
+assert.strictEqual(best_index([], true, 0), -1);
+
+// ------------------------------------------------------------------------------------------------
+// One best move. At s, KataGo ranks D4 first, but Q4 leaves White more on enough visits: Q4 is the
+// best move, the position's value, the first Next Move Options row, and the only star.
+// C16 scores even better on 20 visits, below the minimum, so it reads 0.00.
+
+config.candidate_min_visits = 50;
+config.always_show_next_move_eval = true;
+
+let ctx_s = context([["B", "Q16"]]);
+let s = child(root, "B", "pd");				// Q16; White to play at s.
+analyse(s, ctx_s, {
+	id: "s", rootInfo: {visits: 9020, winrate: 0.41, scoreLead: -0.9},
+	moveInfos: [
+		{move: "D4", order: 0, visits: 5000, winrate: 0.40, scoreLead: -1.0, prior: 0.3, pv: ["D4"]},
+		{move: "Q4", order: 1, visits: 3000, winrate: 0.42, scoreLead: -1.3, prior: 0.2, pv: ["Q4", "C16"]},
+		{move: "C16", order: 2, visits: 20, winrate: 0.38, scoreLead: -2.0, prior: 0.1, pv: ["C16"]},
+		{move: "R4", order: 3, visits: 1000, winrate: 0.45, scoreLead: -0.5, prior: 0.1, pv: ["R4"]},
+	],
+	policy,
+});
+
+assert.strictEqual(node_best(s), 1);
+assert.strictEqual(best_info(s).move, "Q4");
+assert.strictEqual(s.stored_score(), -1.3);					// Q4's value, not the root average's -0.9.
+assert.strictEqual(s.stored_winrate(), 0.42);
+assert.strictEqual(s.get("OGSC"), "-1.30");
+assert.strictEqual(s.get("SBKV"), "42.00");
+assert.strictEqual(s.get("OGWC"), "0.00,0.00,0.30,0.80");		// C16 is clamped: costs are never negative.
+assert.deepStrictEqual(moves(options_table_infos(s)), ["Q4", "D4", "C16", "R4"]);
+
+let s_board = (settings) => {
+	Object.assign(config, settings);
+	let sel = board_candidates(s);
+	return sel.infos.map((info, i) => `${info.move} ${loss_text(sel.costs[i], false, true, i === sel.best)}`);
+};
+assert.deepStrictEqual(s_board({candidate_filter: "count", candidate_count: 1}), ["Q4 ★", "D4 -0.30"]);
+assert.deepStrictEqual(s_board({candidate_filter: "cost", cost_threshold: 0.3}), ["Q4 ★", "D4 -0.30", "C16 0.00"]);
+
+config.candidate_min_visits = 0;							// Every move qualifies: C16 becomes the best.
+assert.strictEqual(best_info(s).move, "C16");
+assert.strictEqual(s.stored_score(), -2.0);
+config.candidate_min_visits = 50;
+assert.strictEqual(best_info(s).move, "Q4");
+
+// ------------------------------------------------------------------------------------------------
+// Values pass up explored lines: the user plays Q4 at s, then C16, each searched longer than the
+// position above gave it. Every position's value is its best move's, explored value included.
+
+let t = child(s, "W", "pp");				// Q4; Black to play at t.
+analyse(t, context([["B", "Q16"], ["W", "Q4"]]), {
+	id: "t", rootInfo: {visits: 6000, winrate: 0.57, scoreLead: -1.1},
+	moveInfos: [
+		{move: "D4", order: 0, visits: 4000, winrate: 0.56, scoreLead: -1.0, pv: ["D4"]},
+		{move: "C16", order: 1, visits: 1500, winrate: 0.55, scoreLead: -0.8, pv: ["C16", "D4"]},
+	],
+});
+
+assert.strictEqual(best_info(t).move, "C16");
+assert.strictEqual(t.stored_score(), -0.8);
+assert.deepStrictEqual(node_infos(s)[1], {
+	move: "Q4", order: 1, visits: 6000, winrate: 0.55, scoreLead: -0.8,
+	pv: ["Q4", "C16", "D4"], prior: 0.2, explored: {own: s.analysis.moveInfos[1]},
+});
+assert.strictEqual(s.stored_score(), -0.8);					// The best move, Q4, at its explored value.
+assert.strictEqual(points_lost(t), 0);
+assert.strictEqual(s.get("OGSC"), "-1.30");					// Saved values stay s's own search's.
+
+let u = child(t, "B", "cd");				// C16; White to play at u.
+analyse(u, context([["B", "Q16"], ["W", "Q4"], ["B", "C16"]]), {
+	id: "u", rootInfo: {visits: 3000, winrate: 0.46, scoreLead: -0.3},
+	moveInfos: [{move: "D4", order: 0, visits: 2500, winrate: 0.47, scoreLead: -0.4, pv: ["D4"]}],
+});
+
+assert.strictEqual(u.stored_score(), -0.4);
+assert.strictEqual(t.stored_score(), -0.4);					// C16 at u's value...
+assert.strictEqual(s.stored_score(), -0.4);					// ...and Q4 at t's, two levels up.
+assert.strictEqual(points_lost(u), 0);
+assert.strictEqual(points_lost(t), 0);
+
+// Other moves at s: D4 explored worse, R4 explored better than the best. R4 is the best's equal
+// at most (0.00), never a second star: the best move is s's own search's choice.
+
+let v = child(s, "W", "dp");				// D4.
+analyse(v, context([["B", "Q16"], ["W", "D4"]]), {
+	id: "v", rootInfo: {visits: 8000, winrate: 0.6, scoreLead: 0.3},
+	moveInfos: [{move: "Q4", order: 0, visits: 6000, winrate: 0.61, scoreLead: 0.2, pv: ["Q4"]}],
+});
+let w = child(s, "W", "qp");				// R4.
+analyse(w, context([["B", "Q16"], ["W", "R4"]]), {
+	id: "w", rootInfo: {visits: 2000, winrate: 0.35, scoreLead: -2.4},
+	moveInfos: [{move: "D4", order: 0, visits: 1500, winrate: 0.34, scoreLead: -2.5, pv: ["D4"]}],
+});
+
+assert.strictEqual(best_info(s).move, "Q4");
+assert.strictEqual(s.stored_score(), -0.4);
+assert.ok(Math.abs(points_lost(v) - 0.6) < 1e-9);
+assert.strictEqual(points_lost(w), 0);
+assert.deepStrictEqual(s_board({candidate_filter: "cost", cost_threshold: 0.3}), ["Q4 ★", "D4 -0.60", "C16 0.00", "R4 0.00"]);		// D4, played from s, past the cutoff.
+
+// The verdict for every move from s and t is the cost their parent shows for it.
+
+for (let node of [t, u, v, w]) {
+	let parent_node = node.parent;
+	let shown_entry = node_infos(parent_node).find(info => info.move === parent_node.get_board().gtp(node.get(node.has_key("B") ? "B" : "W")));
+	let cost = info_cost(shown_entry, best_info(parent_node).scoreLead, parent_node.get_board().active === "b");
+	assert.ok(Math.abs(points_lost(node) - cost) < 1e-9, `${node.analysis.id}: verdict ${points_lost(node)} vs cost ${cost}`);
+}
 
 console.log("explored tests passed");

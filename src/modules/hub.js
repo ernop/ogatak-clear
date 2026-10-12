@@ -24,6 +24,7 @@ const config_io = require("./config_io");
 
 const {translate} = require("./translate");
 const {node_id_from_search_id, valid_analysis_object, compare_versions, xy_to_s} = require("./utils");
+const {best_info} = require("./explored");
 
 const {NORMAL, AUTOANALYSIS, BACKANALYSIS, SELFPLAY, AUTOSCROLL, PLAY_BLACK, PLAY_WHITE} = require("./enums");
 
@@ -502,10 +503,15 @@ let hub_main_props = {
 		this.set_node(node, {keep_play_colour: true, bless: true});
 	},
 
+	// "best": the starred move (Play best move). "engine": KataGo's own first
+	// choice, which weighs winrate as well as score, for when the engine plays.
+
 	play_best: function(mode = "best") {
 		if (this.node.has_valid_analysis()) {
 			let s;
 			if (mode === "best") {
+				s = this.node.get_board().parse_gtp_move(best_info(this.node).move);
+			} else if (mode === "engine") {
 				s = this.node.get_board().parse_gtp_move(this.node.analysis.moveInfos[0].move);
 			} else if (mode === "policy") {
 				s = this.node.best_policy_move();
@@ -743,7 +749,7 @@ let hub_main_props = {
 
 				if (this.playing_active_colour()) {
 
-					this.play_best();
+					this.play_best("engine");
 
 				} else if (this.play_mode === AUTOANALYSIS) {
 
@@ -766,7 +772,7 @@ let hub_main_props = {
 					if (this.node.parent && this.node.parent.has_pass() && this.node.has_pass()) {		// Already had 2 passes, incoming move is 3rd (maybe).
 						this.halt();
 					} else {
-						this.play_best();
+						this.play_best("engine");
 					}
 				}
 			}

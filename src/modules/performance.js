@@ -4,6 +4,7 @@
 // By far the hardest part to understand is the accuracy statistic.
 
 const {clamp, sum} = require("./utils");
+const {node_best} = require("./explored");
 
 module.exports = function(any_node, min_depth = 0, max_depth = Infinity) {
 
@@ -48,7 +49,12 @@ module.exports = function(any_node, min_depth = 0, max_depth = Infinity) {
 		let s = node.get(key);
 		let gtp = node.get_board().gtp(s);
 
-		let points_lost = node.parent.analysis.rootInfo.scoreLead - node.analysis.rootInfo.scoreLead;
+		// The Move Quality verdict's loss: position values (Node.stored_score), so
+		// "Mean point loss" averages the numbers the panel shows move by move.
+
+		let before = node.parent.stored_score();
+		let after = node.stored_score();
+		let points_lost = typeof before === "number" && typeof after === "number" ? before - after : 0;
 		if (key === "W") points_lost *= -1;
 		if (points_lost < 0) points_lost = 0;
 		stats[key].points_lost += points_lost;
@@ -108,11 +114,15 @@ function node_difficulty_stat(node) {		// Assumes it has valid analysis.
 	// KaTrain calculates some sort of difficulty statistic for a position by looking at the known moveInfos and
 	// multiplying the points lost for each by the prior. Then these values are summed...
 
+	// Points lost are measured from the best move of the position's own search,
+	// as on the board.
+
 	let ret = 0;
+	let best_lead = node.analysis.moveInfos[node_best(node)].scoreLead;
 
 	for (let info of node.analysis.moveInfos) {
 
-		let move_points_lost = node.analysis.rootInfo.scoreLead - info.scoreLead;
+		let move_points_lost = best_lead - info.scoreLead;
 		if (node.get_board().active === "w") move_points_lost *= -1;
 		if (move_points_lost < 0) move_points_lost = 0;
 

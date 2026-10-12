@@ -12,7 +12,7 @@ const path = require("path");
 const new_board = require("./board");
 const stringify = require("./stringify");
 const {ANALYSIS_CONTEXT_PROPERTY} = require("./query");
-const {inherited_root} = require("./explored");
+const {inherited_root, best_info, best_index, min_visits, invalidate} = require("./explored");
 const {replace_all, valid_analysis_object, handicap_stones, points_list, xy_to_s} = require("./utils");
 
 const MIN_GRAPH_DEPTH = 60;
@@ -61,6 +61,8 @@ class Node {
 			}
 
 		}
+
+		invalidate();
 	}
 
 	change_id() {
@@ -77,6 +79,7 @@ class Node {
 
 	set(key, value) {
 		this.props[key] = [stringify(value)];
+		invalidate();
 	}
 
 	add_value(key, value) {
@@ -85,6 +88,7 @@ class Node {
 		} else {
 			this.props[key].push(stringify(value));
 		}
+		invalidate();
 	}
 
 	unset(key, value) {
@@ -96,6 +100,7 @@ class Node {
 		if (this.props[key].length === 0) {
 			delete this.props[key];
 		}
+		invalidate();
 	}
 
 	unset_starts_with(key, value) {
@@ -107,10 +112,12 @@ class Node {
 		if (this.props[key].length === 0) {
 			delete this.props[key];
 		}
+		invalidate();
 	}
 
 	delete_key(key) {
 		delete this.props[key];
+		invalidate();
 	}
 
 	has_key(key) {
@@ -898,6 +905,7 @@ class Node {
 	forget_analysis() {
 		this.analysis = null;
 		this.analysis_context = null;
+		invalidate();
 		this.delete_key("SBKV");
 		this.delete_key("OGSC");
 		this.delete_key("OGWI");
@@ -951,16 +959,24 @@ class Node {
 
 		this.analysis = o;
 		this.analysis_context = context;
+		invalidate();
 
 		// this.analysis.moveInfos.sort((a, b) => a.order - b.order);		// KataGo already sends it this way.
 
-		let winrate = this.analysis.rootInfo.winrate * 100;			// SBKV is 0..100
+		// The saved values are this search's own best move's (explored.best_index),
+		// never an explored or inherited value: those come from other searches.
+
+		let infos = this.analysis.moveInfos;
+		let active_is_b = this.get_board().active === "b";
+		let best = infos[best_index(infos, active_is_b, min_visits())];
+
+		let winrate = (typeof best.winrate === "number" ? best.winrate : this.analysis.rootInfo.winrate) * 100;		// SBKV is 0..100
 		if (winrate < 0) winrate = 0;
 		if (winrate > 100) winrate = 100;
 		let val = (winrate).toFixed(2);
 		this.set("SBKV", val);
 
-		let score = this.analysis.rootInfo.scoreLead;
+		let score = typeof best.scoreLead === "number" ? best.scoreLead : this.analysis.rootInfo.scoreLead;
 
 		if (typeof score === "number") {							// scoreLead might not be present if it's a GTP engine.
 			val = score.toFixed(2);
@@ -969,10 +985,8 @@ class Node {
 			this.delete_key("OGSC");
 		}
 
-		let infos = this.analysis.moveInfos;
-		let best_score = infos.length > 0 ? infos[0].scoreLead : null;
+		let best_score = best.scoreLead;
 		if (typeof best_score === "number") {
-			let active_is_b = this.get_board().active === "b";
 			let costs = infos.map(info => {
 				if (typeof info.scoreLead !== "number") {
 					return null;
@@ -998,13 +1012,19 @@ class Node {
 		return true;
 	}
 
+	// The position's value: inherited, else its best move's (explored.best_info),
+	// else the saved SGF value.
+
 	stored_score() {
 		let inherited = inherited_root(this);
 		if (inherited) {
 			return typeof inherited.scoreLead === "number" ? inherited.scoreLead : null;
 		}
 		if (this.has_valid_analysis()) {
-			let score = this.analysis.rootInfo.scoreLead;
+			let score = best_info(this).scoreLead;
+			if (typeof score !== "number") {
+				score = this.analysis.rootInfo.scoreLead;
+			}
 			if (typeof score === "number") {						// scoreLead might not be present if it's a GTP engine.
 				return score;
 			} else {
@@ -1058,7 +1078,10 @@ class Node {
 			return typeof inherited.winrate === "number" ? Math.min(1, Math.max(0, inherited.winrate)) : null;
 		}
 		if (this.has_valid_analysis()) {
-			let winrate = this.analysis.rootInfo.winrate;
+			let winrate = best_info(this).winrate;
+			if (typeof winrate !== "number") {
+				winrate = this.analysis.rootInfo.winrate;
+			}
 			if (typeof winrate === "number") {
 				if (winrate < 0) winrate = 0;
 				if (winrate > 1) winrate = 1;
@@ -1283,6 +1306,8 @@ function safe_sgf_string(s) {
 }
 
 function destroy_tree_recursive(node) {
+
+	invalidate();
 
 	while (true) {
 
