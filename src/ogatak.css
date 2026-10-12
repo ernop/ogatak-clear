@@ -122,7 +122,8 @@ body {
 	font-family: monospace, monospace;
 	font-size: var(--fs-body);
 	color: #ffffffff;
-	margin: 16px 0 0 16px;
+	margin: 16px 0 0 0;
+	padding: 0 8px 0 16px;		/* Padding, not margin: the bar must fit its grid column (border-box), or its right end slides under the panel. */
 	width: 0;
 	min-width: 100%;
 	max-width: 100%;
