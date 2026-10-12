@@ -142,6 +142,28 @@ function chart_plot_rect(canvas) {
 	};
 }
 
+function draw_swatch_legend(ctx, items, x, y, x_max) {
+
+	// Each item's colour goes on a swatch and its label stays white: several
+	// series colours (the deep reds) are too dark to be legible as text.
+	// Items that would pass x_max are left out.
+
+	let px = type_scale.px("fine");
+	let size = Math.round(px * 0.7);
+	ctx.font = type_scale.canvas_font("fine");
+	ctx.textAlign = "left";
+	ctx.textBaseline = "top";
+	for (let item of items) {
+		let width = size + 4 + ctx.measureText(item.label).width;
+		if (x + width > x_max) break;
+		ctx.fillStyle = item.colour;
+		ctx.fillRect(x, y + Math.round((px - size) / 2), size, size);
+		ctx.fillStyle = "#ffffffff";
+		ctx.fillText(item.label, x + size + 4, y);
+		x += width + 12;
+	}
+}
+
 function chart_x_scale(x0, x1, end_depth, windowed, window_n) {
 
 	// Shared x mapping. A move is the interval (d-1, d]: quality fills that
@@ -1113,13 +1135,13 @@ let move_report_prototype = {
 		ctx.fillRect(x0, frame_y0, x1 - x0, y1 - frame_y0);
 		ctx.font = type_scale.canvas_font("caption");
 		if (profile.total === 0) {
-			ctx.fillStyle = "#999999ff";
+			ctx.fillStyle = "#ffffffff";
 			ctx.textAlign = "left";
 			ctx.textBaseline = "top";
 			ctx.fillText(hub.engine.desired ? "analysing..." : "no candidate analysis", x0 + 6, frame_y0 + 6);
 			return null;
 		}
-		ctx.fillStyle = "#999999ff";
+		ctx.fillStyle = "#ffffffff";
 		ctx.textAlign = "right";
 		ctx.textBaseline = "top";
 		ctx.fillText(this.distribution_coverage_label(profile), x1 - 6, frame_y0 + 6);
@@ -1203,7 +1225,7 @@ let move_report_prototype = {
 		let frame = chart_plot_rect(this.distribution_canvas);
 		if (profile.nearest_outside_030 !== null) {
 			let ctx = this.distribution_ctx;
-			ctx.fillStyle = "#b9cde0ff";
+			ctx.fillStyle = "#ffffffff";
 			ctx.textAlign = "left";
 			ctx.textBaseline = "top";
 			ctx.fillText(`nearest outside 0.30: ${profile.nearest_outside_030.toFixed(2)}`, frame.x0 + 6, frame.y0 + 6);
@@ -1294,13 +1316,19 @@ let move_report_prototype = {
 		let x_of = rank => profile.total === 1
 			? (x0 + x1) / 2
 			: x0 + (x1 - x0) * (rank - 1) / (profile.total - 1);
-		for (let tick of [0, .1, .3, 1, 3, 10]) {
+		let label_h = type_scale.px("caption");
+		let label_ys = [];
+		for (let tick of [0, 10, 1, 3, .3, .1]) {			// Endpoints first; a tick too close to a labelled one keeps only its line.
 			let y = y_of(tick);
 			ctx.strokeStyle = tick === 0 ? "#555555ff" : "#2c2c2cff";
 			ctx.beginPath();
 			ctx.moveTo(x0, y);
 			ctx.lineTo(x1, y);
 			ctx.stroke();
+			if (label_ys.some(label_y => Math.abs(label_y - y) < label_h)) {
+				continue;
+			}
+			label_ys.push(y);
 			ctx.fillStyle = "#e0b872ff";
 			ctx.textAlign = "right";
 			ctx.textBaseline = "middle";
@@ -1378,7 +1406,7 @@ let move_report_prototype = {
 			let row = Math.floor(i / columns);
 			let x = x0 + col * cell_w + 8;
 			let y = y0 + row * cell_h;
-			ctx.fillStyle = "#888888ff";
+			ctx.fillStyle = "#ffffffff";
 			ctx.textAlign = "left";
 			ctx.textBaseline = "top";
 			ctx.font = type_scale.canvas_font("fine");
@@ -1519,16 +1547,8 @@ let move_report_prototype = {
 			}
 			ctx.stroke();
 		}
-		ctx.font = type_scale.canvas_font("fine");
-		ctx.textAlign = "left";
-		ctx.textBaseline = "top";
-		let legend_x = x0 + 6;
-		for (let item of series) {
-			ctx.fillStyle = item.colour;
-			ctx.fillText(item.label, legend_x, y0 + 6);
-			legend_x += ctx.measureText(item.label).width + 14;
-		}
-		ctx.fillStyle = "#999999ff";
+		draw_swatch_legend(ctx, series, x0 + 6, y0 + 6, x1 - 4);
+		ctx.fillStyle = "#ffffffff";
 		ctx.textAlign = "right";
 		ctx.fillText("candidate count over time", x1 - 6, y0 + 6);
 	},
@@ -1569,17 +1589,8 @@ let move_report_prototype = {
 		}
 		ctx.fillStyle = "#111111dd";
 		ctx.fillRect(x0, y0, x1 - x0, type_scale.px("fine") + 10);
-		ctx.font = type_scale.canvas_font("fine");
-		ctx.textAlign = "left";
-		ctx.textBaseline = "top";
-		let legend_x = x0 + 6;
-		for (let i = 0; i < candidate_profile.BAND_LABELS.length; i++) {
-			let label = candidate_profile.BAND_LABELS[i];
-			if (legend_x + ctx.measureText(label).width > x1 - 4) break;
-			ctx.fillStyle = PROFILE_COLOURS[i];
-			ctx.fillText(label, legend_x, y0 + 6);
-			legend_x += ctx.measureText(label).width + 10;
-		}
+		let bands = candidate_profile.BAND_LABELS.map((label, i) => ({label, colour: PROFILE_COLOURS[i]}));
+		draw_swatch_legend(ctx, bands, x0 + 6, y0 + 6, x1 - 4);
 	},
 
 	draw_breadth_cumulative: function(data) {
@@ -1607,7 +1618,7 @@ let move_report_prototype = {
 				ctx.fillRect(xs.x_of(d - 1), top, Math.max(1, xs.slot_w), row_h);
 			}
 		}
-		ctx.fillStyle = "#999999ff";
+		ctx.fillStyle = "#ffffffff";
 		ctx.textAlign = "right";
 		ctx.textBaseline = "top";
 		ctx.fillText(`darker = more candidates · max ${max_count}`, x1 - 6, y0 + 6);
@@ -1632,7 +1643,7 @@ let move_report_prototype = {
 				ctx.fillRect(xs.x_of(d - 1), top, Math.max(1, xs.slot_w), row_h);
 			}
 		}
-		ctx.fillStyle = "#999999ff";
+		ctx.fillStyle = "#ffffffff";
 		ctx.textAlign = "right";
 		ctx.textBaseline = "top";
 		ctx.fillText("rows = value rank · colour = cost (cap 10)", x1 - 6, y0 + 6);
@@ -1657,17 +1668,11 @@ let move_report_prototype = {
 		}
 		ctx.fillStyle = "#111111dd";
 		ctx.fillRect(x0, y0, x1 - x0, type_scale.px("fine") + 10);
-		ctx.font = type_scale.canvas_font("fine");
-		ctx.textAlign = "left";
-		ctx.textBaseline = "top";
-		let legend_x = x0 + 6;
-		for (let state of states) {
-			let suffix = state.max === Infinity ? "8+" : state.max.toString();
-			let text = `${state.label} ${suffix}`;
-			ctx.fillStyle = state.colour;
-			ctx.fillText(text, legend_x, y0 + 6);
-			legend_x += ctx.measureText(text).width + 12;
-		}
+		let legend = states.map(state => ({
+			label: `${state.label} ${state.max === Infinity ? "8+" : state.max}`,
+			colour: state.colour,
+		}));
+		draw_swatch_legend(ctx, legend, x0 + 6, y0 + 6, x1 - 4);
 		ctx.fillStyle = "#111111cc";
 		ctx.fillRect(x0, y1 - 20, x1 - x0, 20);
 		ctx.fillStyle = "#ffffffff";
@@ -1827,7 +1832,7 @@ let move_report_prototype = {
 		ctx.fillStyle = "#ffffffff";
 		ctx.fillText("white gains", x0 + 6, y0 + 8);
 		ctx.textAlign = "left";
-		ctx.fillStyle = "#999999ff";
+		ctx.fillStyle = "#ffffffff";
 		ctx.fillText("black gains", x0 + 6, y1 - 8);
 
 		// Current position: the right edge of this move's bar, matching the

@@ -160,6 +160,12 @@ stand in for the `electron` module as `settings_schema.test.js` does.
   never add a pane-local font-size config key or control (the Move Report
   panel once had one — `move_report_font_size` — and it silently drifted
   out of step with the rest of the UI; it was removed).
+- **No gray text.** Neutral text is #ffffffff on the dark panels (#000000ff
+  on light ones), in CSS and in canvas `fillText` colours alike. Secondary
+  text gets a smaller type step, weight, or placement, never a dimmer
+  colour or opacity (`PRODUCT.md` framework rule 7). Chart legends go
+  through `draw_swatch_legend` in `move_report.js`: the series colour on a
+  swatch, the label white.
 - **`board_drawer.square_size` can be fractional CSS pixels.** It is a
   whole number of device pixels, so the grid stays crisp under UI zoom
   (`PRODUCT-workspace.md`, "The board under UI zoom"). Never use it as

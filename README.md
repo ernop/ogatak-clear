@@ -32,6 +32,8 @@ search's visits; moves that have since left the board are dashed. See the
   points a move shows on the board are the points its verdict reports once
   it's played. Values found by searching deeper down a line count at every
   position above it.
+* **No gray text**: labels, visit counts, chart captions and controls are
+  white; size and weight set them apart.
 * **Eval history labels you can hover and pin**: hover a line's label to see
   that move's continuation on the board, as if you'd hovered the move itself;
   click to pin it. A band across the top gives the move's visits, policy, and

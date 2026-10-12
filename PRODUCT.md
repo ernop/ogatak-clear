@@ -56,6 +56,25 @@ reference.
    visibly different. Never a set of identical-looking options when one
    is clearly better. The stock Colours-menu top/off pair is available
    as the Gradient item "Classic (Colours menu)".
+7. **No gray text.** (2026-10-12) Neutral text is pure white (#fff) on
+   dark backgrounds and pure black (#000) on light ones, in the DOM and on
+   chart canvases: ranks, metadata, visit counts, chart captions, axis
+   labels, and the ▲ ▼ ✕ controls. Secondary text is set apart by size,
+   weight, and placement, never by dimming; the card controls are one
+   type step smaller than the section titles. Colours that carry meaning
+   (verdicts, the gradient, the blue star, the tan labels) stay. Hover
+   feedback on controls is a background highlight. Lines, bars, and
+   fills are not text and keep their shades. Chart legends put each
+   series colour on a swatch and keep the label white, because several
+   series colours (the deep reds of the cost bands) are too dark to read
+   as text.
+8. **Headings outweigh the text under them.** (2026-10-12) A heading is
+   larger or heavier than the body text beneath it, never both smaller
+   and lighter. Card titles ("LAST MOVE", "NEXT MOVE OPTIONS") and table
+   column headings are bold, since they are a type step or two smaller
+   than the body text; the ▲ ▼ ✕ controls in a card's title row stay
+   normal weight. Data values (verdicts, names, scores) may still be the
+   largest text in a card.
 
 ## What a glance at the screen must convey
 
