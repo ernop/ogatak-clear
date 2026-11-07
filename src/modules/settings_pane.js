@@ -6,7 +6,7 @@
 // through hub.set() exactly like a menu click, so it applies at once and saves
 // itself. See PRODUCT-workspace.md "Settings pane".
 //
-// Styling follows agents.md "UI conventions": text sizes come from the --fs-*
+// Styling follows AGENTS.md "UI conventions": text sizes come from the --fs-*
 // type scale, and JS only toggles classes or publishes CSS custom properties;
 // every style rule lives in ogatak.css.
 

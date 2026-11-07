@@ -23,7 +23,7 @@
 // _chart_height, adjustable live from the controls the panel itself renders,
 // and every change is saved to config.json immediately.
 //
-// Typography and styling rules (agents.md "UI conventions"):
+// Typography and styling rules (AGENTS.md "UI conventions"):
 //   - Every text size comes from the six-step type scale (type_scale.js),
 //     derived from the app-wide info_font_size. DOM text via the --fs-*
 //     variables in ogatak.css; canvas text via type_scale.canvas_font().

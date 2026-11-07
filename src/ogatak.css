@@ -7,7 +7,7 @@
 
    Never write an ad-hoc font-size (no em/px literals) anywhere in this file:
    always reference one of these six variables, or put the fs-* utility class
-   directly on the element. See agents.md "UI conventions". */
+   directly on the element. See AGENTS.md "UI conventions". */
 
 :root {
 	--fs-hero: 29px;			/* 1.6x  — the loudest element in a pane: turn banner, verdict, player names */

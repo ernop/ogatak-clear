@@ -661,7 +661,7 @@ Requirements now:
    IS the template: reorder it, delete from it, and that's the layout.
 7. **All text sizes come from the app's six-step type scale** (hero /
    emph / body / ui / caption / fine — see `src/modules/type_scale.js`
-   and agents.md "UI conventions"), each a fixed multiple of the single
+   and AGENTS.md "UI conventions"), each a fixed multiple of the single
    app-wide font setting (`info_font_size`), so the whole panel —
    including canvas chart labels — scales coherently with one control.
    Ad-hoc font sizes and inline styles are forbidden.

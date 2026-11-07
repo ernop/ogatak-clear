@@ -4,7 +4,7 @@
 // from the single user setting config.info_font_size (Sizes → Info font).
 // Nothing anywhere may use an ad-hoc font size: DOM styling consumes the
 // --fs-* CSS variables published here (see ogatak.css), and canvas text uses
-// px() / canvas_font() below. See agents.md "UI conventions".
+// px() / canvas_font() below. See AGENTS.md "UI conventions".
 //
 // JS never sets concrete style properties on our UI elements — it only
 // publishes data as CSS custom properties; every actual style rule lives in
