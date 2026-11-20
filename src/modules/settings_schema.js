@@ -181,6 +181,10 @@ exports.groups = [
 		title: "Board and info bar",
 		rows: [
 			{type: "toggle", key: "coordinates", label: "Coordinates"},
+			{type: "toggle", key: "show_move_numbers", label: "Move numbers on stones", find: "move numbers"},
+			{type: "number", key: "show_move_numbers_count", label: "Recent moves numbered", unit: "moves", integer: true,
+				min: 0, max: 1000, zero_label: "all", zero_value: -1, presets: [1, 5, 10, 20, 50, 100, -1],
+				then: {show_move_numbers: true}, find: "move numbers recent count"},
 			{type: "toggle", key: "embiggen_small_boards", label: "Enlarge small boards", find: "embiggen"},
 			{type: "number", key: "board_line_width", label: "Grid line width", unit: "px", integer: true, min: 1, max: 8, presets: [1, 2, 3, 4]},
 			{type: "toggle", key: "stone_counts", label: "Stone counts instead of captures"},
@@ -296,11 +300,15 @@ exports.format_count = function(n) {
 	return Math.round(n).toLocaleString("en-US");
 };
 
+function special_zero_value(row) {
+	return typeof row.zero_value === "number" ? row.zero_value : 0;
+}
+
 exports.format_value = function(value, row) {
 	if (typeof value !== "number" || !Number.isFinite(value)) {
 		return "";
 	}
-	if (row.zero_label && value === 0) {
+	if (row.zero_label && value === special_zero_value(row)) {
 		return row.zero_label;
 	}
 	let n = row.scale ? value * row.scale : value;
@@ -319,7 +327,7 @@ exports.format_value = function(value, row) {
 exports.parse_value = function(text, row) {
 	let s = String(text).trim().toLowerCase().replace(/[\s_]/g, "");
 	if (row.zero_label && s === row.zero_label) {
-		return 0;
+		return special_zero_value(row);
 	}
 	if (row.unit === "%" && s.endsWith("%")) {
 		s = s.slice(0, -1);
@@ -363,6 +371,9 @@ exports.problem_with = function(value, row) {
 	if (value === null) {
 		return `Type a number (${range}${row.zero_label ? `, or "${row.zero_label}"` : ""}).`;
 	}
+	if (row.zero_label && value === special_zero_value(row)) {
+		return null;
+	}
 	if (value < row.min - EPSILON || value > row.max + EPSILON) {
 		return `Must be ${range}${row.unit ? " " + row.unit : ""}${row.zero_label ? `, or "${row.zero_label}"` : ""}.`;
 	}
@@ -370,11 +381,12 @@ exports.problem_with = function(value, row) {
 };
 
 // The next value above (dir > 0) or below (dir < 0): the nearest preset beyond the
-// current value, else a fixed step. A zero that means "all" sorts above every number.
+// current value, else a fixed step. A sentinel value that means "all" sorts above every number.
 
 exports.step_value = function(value, row, dir) {
 	let infinite_zero = Boolean(row.zero_label);
-	let rank = (n) => (infinite_zero && n === 0) ? Infinity : n;
+	let zval = special_zero_value(row);
+	let rank = (n) => (infinite_zero && n === zval) ? Infinity : n;
 	let presets = presets_of(row).map(rank).sort((a, b) => a - b);
 	let current = rank(value);
 	let result;
@@ -392,7 +404,7 @@ exports.step_value = function(value, row, dir) {
 	}
 
 	if (result === Infinity) {
-		return 0;
+		return zval;
 	}
 	result = Math.max(row.min, Math.min(row.max, result));
 	return row.integer ? Math.round(result) : Number(result.toFixed(10));

@@ -179,6 +179,9 @@ electron.app.whenReady().then(() => {					// If "ready" event already happened, 
 			// Create a setTimeout that will make the app close without the renderer's help if it takes too long (due to a crash)...
 
 			setTimeout(() => {
+				if (win.isDestroyed()) {				// Conceivable if the main process is very slow to halt for some reason.
+					return;
+				}
 				console.log("Renderer seems unresponsive, quitting anyway.");
 				have_received_terminate = true;
 				win.close();
@@ -323,6 +326,12 @@ electron.app.whenReady().then(() => {					// If "ready" event already happened, 
 				two_process_set("sgf_folder", path.dirname(o.filePath));
 			}
 		});
+	});
+
+	electron.ipcMain.on("set_clipboard_text", (event, text) => {
+		if (typeof text === "string") {
+			electron.clipboard.writeText(text);
+		}
 	});
 
 	electron.Menu.setApplicationMenu(menu);
@@ -567,10 +576,20 @@ function menu_build() {
 					label: translate("MENU_PASTE_SGF"),
 					accelerator: "CommandOrControl+Shift+V",
 					click: () => {
-						win.webContents.send("call", {
-							fn: "load_sgf_from_string",
-							args: [electron.clipboard.readText()]
+						// electron.clipboard.readText() may or may not return a promise (Electron 44+ does)
+						Promise.resolve(electron.clipboard.readText()).then((s) => {
+							win.webContents.send("call", {
+								fn: "load_sgf_from_string",
+								args: [s]
+							});
 						});
+					}
+				},
+				{
+					label: translate("MENU_COPY_SGF"),
+					accelerator: "CommandOrControl+Shift+C",
+					click: () => {
+						win.webContents.send("call", "sgf_to_clipboard");
 					}
 				},
 				{
@@ -1682,6 +1701,14 @@ function menu_build() {
 					accelerator: "CommandOrControl+Shift+M",
 					click: () => {
 						win.webContents.send("toggle", "next_move_markers");
+					}
+				},
+				{
+					label: translate("MENU_SHOW_MOVE_NUMBERS"),
+					type: "checkbox",
+					checked: config.show_move_numbers,
+					click: () => {
+						win.webContents.send("toggle", "show_move_numbers");
 					}
 				},
 				{

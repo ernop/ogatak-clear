@@ -51,6 +51,7 @@ const togglechecks = {
 	mouseover_pv:			[translate("MENU_DISPLAY"), translate("MENU_WITH_PV_MOUSEOVER")],
 	visit_colours:			[translate("MENU_DISPLAY"), translate("MENU_FADE_BY_VISITS")],
 	next_move_markers:		[translate("MENU_DISPLAY"), translate("MENU_NEXT_MOVE_MARKERS")],
+	show_move_numbers:		[translate("MENU_DISPLAY"), translate("MENU_SHOW_MOVE_NUMBERS")],
 	show_tab_strip:			[translate("MENU_DISPLAY"), "Tab strip"],
 	embiggen_small_boards:	[translate("MENU_SIZES"), translate("MENU_EMBIGGEN_SMALL_BOARDS")],
 	play_against_policy:	[translate("MENU_MISC"), translate("MENU_ENGINE_PLAYS_POLICY")],
@@ -190,6 +191,8 @@ module.exports = {
 		case "mouseover_pv":
 		case "next_move_markers":
 		case "mark_explored_moves":
+		case "show_move_numbers":
+		case "show_move_numbers_count":
 		case "visit_colours":
 		case "black_pov":
 

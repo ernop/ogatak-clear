@@ -85,6 +85,17 @@ assert.strictEqual(schema.parse_value("ALL", cutoff), 0);
 assert.strictEqual(schema.parse_value("0,5", cutoff), 0.5);
 assert.deepStrictEqual(cutoff.then, {candidate_filter: "cost"});
 
+// Move numbers count: -1 means "all" and sorts above finite counts.
+
+let move_nums = row("show_move_numbers_count");
+assert.strictEqual(schema.format_value(-1, move_nums), "all");
+assert.strictEqual(schema.parse_value("ALL", move_nums), -1);
+assert.strictEqual(schema.step_value(100, move_nums, 1), -1);
+assert.strictEqual(schema.step_value(-1, move_nums, -1), 100);
+assert.strictEqual(schema.problem_with(-1, move_nums), null);
+assert.strictEqual(schema.problem_with(10, move_nums), null);
+assert.deepStrictEqual(move_nums.then, {show_move_numbers: true});
+
 // UI zoom is read and typed as a percentage.
 
 let zoom = row("zoom_factor");

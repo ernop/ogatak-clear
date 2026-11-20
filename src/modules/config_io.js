@@ -76,6 +76,8 @@ exports.defaults = {
 	"mouseover_pv": true,
 	"mouseover_delay": 0,
 	"next_move_markers": true,
+	"show_move_numbers": false,
+	"show_move_numbers_count": -1,					// How many recent moves to number. -1 means all.
 	"visit_colours": true,
 
 	"thumbnail_square_size": 4,
@@ -416,6 +418,13 @@ function apply_fixes() {
 	if (config.window_y !== null && typeof config.window_y !== "number") {
 		config.window_y = null;
 	}
+
+	// Someone might edit the move numbers count to something invalid...
+
+	if (typeof config.show_move_numbers_count !== "number") {
+		config.show_move_numbers_count = exports.defaults.show_move_numbers_count;
+	}
+	config.show_move_numbers_count = Math.max(-1, Math.floor(config.show_move_numbers_count));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------

@@ -190,6 +190,11 @@ let hub_main_props = {
 		toast(translate("ALERT_SAVED_COLLECTION"), 1600);
 	},
 
+	sgf_to_clipboard: function() {
+		ipcRenderer.send("set_clipboard_text", tree_string(this.node));
+		toast(translate("ALERT_COPIED_SGF"), 1600);
+	},
+
 	// Loading.....................................................................................
 
 	load_from_buffer: function(buf, type, filepath, known_utf8 = false) {		// filepath is passed solely so we can store it in the root.
