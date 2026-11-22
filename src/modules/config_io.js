@@ -97,8 +97,8 @@ exports.defaults = {
 	"window_y": null,
 
 	"show_tab_strip": true,						// Display → Tab strip. PRODUCT-workspace.md.
-	"info_bar_show_players": true,				// Black left / White right on the board info bar when PB/PW exist.
-	"info_bar_items": ["rules", "toplay", "caps", "komi", "score", "show", "visits"],
+	"info_bar_show_players": false,				// Off by default: Move Report's identity strip already shows players and active turn.
+	"info_bar_items": ["rules", "komi", "caps", "show"],
 	"tree_pane_height": 280,					// Variation-tree card height while the tree is a Move Report section.
 
 	"move_report_width": 640,					// These settings are adjusted live from the Move Report panel's

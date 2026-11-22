@@ -37,7 +37,7 @@ const candidate_profile = require("./candidate_profile");
 const eval_history = require("./eval_history");
 const explored = require("./explored");
 const type_scale = require("./type_scale");
-const {info_cost, loss_text, ZERO_LOSS, safe_html, board_candidates, options_table_infos} = require("./utils");
+const {info_cost, loss_text, ZERO_LOSS, safe_html, board_candidates, options_table_infos, fmt_visits} = require("./utils");
 
 const SECTION_TITLES = {
 	quality:  "MOVE QUALITY",
@@ -220,21 +220,22 @@ function init() {
 	parts.push(`<span class="mr_settings_ctl" title="Every setting in one place (Ctrl+,)">⚙ settings</span>`);
 	parts.push(`<span class="mr_ctlgroup">width <span class="mr_ctl" data-act="width_down">–</span><span class="mr_ctl" data-act="width_up">+</span></span>`);
 	parts.push(`<span class="mr_ctlgroup">chart <span class="mr_ctl" data-act="chart_down">–</span><span class="mr_ctl" data-act="chart_up">+</span></span>`);
-	parts.push(`<label class="mr_metric">breadth <select id="mr_breadth_view">`);
+	parts.push(`<label class="mr_metric" id="mr_breadth_ctl">breadth <select id="mr_breadth_view">`);
 	for (let [value, label] of Object.entries(BREADTH_VIEW_LABELS)) {
 		parts.push(`<option value="${value}">${label}</option>`);
 	}
 	parts.push(`</select></label>`);
-	parts.push(`<span id="mr_hidden_chips"></span>`);
+	parts.push(`<span class="mr_panels_toggle hidden" id="mr_panels_toggle" title="Show hidden panels">+ panels</span>`);
 	parts.push(`</div>`);
+	parts.push(`<div id="mr_hidden_chips" class="hidden"></div>`);
 
 	parts.push(`<div id="mr_inner">`);
 	for (let sec of ALL_SECTIONS) {
 		parts.push(`<div class="mr_secbox" id="mr_secbox_${sec}">`);
 		parts.push(`<div class="mr_sechead">`);
 		parts.push(`<span class="mr_sectitle">${SECTION_TITLES[sec]}</span>`);
-		if (sec === "history") {
-			parts.push(`<span class="mr_secstatus" id="mr_history_status"></span>`);
+		if (sec === "history" || sec === "options") {
+			parts.push(`<span class="mr_secstatus" id="mr_${sec}_status"></span>`);
 		}
 		parts.push(`<span class="mr_secctls">`);
 		if (YSCALE_SECTIONS.includes(sec)) {
@@ -248,9 +249,9 @@ function init() {
 		if (sec === "history") {
 			parts.push(`<span class="mr_secctl" id="mr_xscale_ctl_history" data-sec="history" data-act="xscale" title="Toggle log / linear visits axis">log</span>`);
 		}
-		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="up" title="Move section up">▲</span>`);
-		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="down" title="Move section down">▼</span>`);
-		parts.push(`<span class="mr_secctl" data-sec="${sec}" data-act="hide" title="Hide section">✕</span>`);
+		parts.push(`<span class="mr_secctl mr_secctl_chrome" data-sec="${sec}" data-act="up" title="Move section up">▲</span>`);
+		parts.push(`<span class="mr_secctl mr_secctl_chrome" data-sec="${sec}" data-act="down" title="Move section down">▼</span>`);
+		parts.push(`<span class="mr_secctl mr_secctl_chrome" data-sec="${sec}" data-act="hide" title="Hide section">✕</span>`);
 		parts.push(`</span>`);
 		parts.push(`</div>`);
 		if (CHART_SECTIONS.includes(sec)) {
@@ -282,6 +283,9 @@ function init() {
 		outer: outer,
 		inner: document.getElementById("mr_inner"),
 		chips: document.getElementById("mr_hidden_chips"),
+		panels_toggle: document.getElementById("mr_panels_toggle"),
+		panels_tray_open: false,
+		breadth_ctl: document.getElementById("mr_breadth_ctl"),
 		game_identity: document.getElementById("mr_game_identity"),
 
 		quality_canvas: document.getElementById("mr_canvas_quality"),
@@ -308,6 +312,7 @@ function init() {
 		history_pin: null,			// {node, move}: a label clicked to keep following that move at that node.
 		history_hits: [],			// Eval history label boxes from the last draw: {move, x0, y0, x1, y1}.
 		history_status: document.getElementById("mr_history_status"),
+		options_status: document.getElementById("mr_options_status"),
 
 	});
 
@@ -316,6 +321,13 @@ function init() {
 		if (event.target.closest(".mr_settings_ctl")) {
 			event.preventDefault();
 			hub.toggle_settings();
+			return;
+		}
+
+		if (event.target.closest(".mr_panels_toggle")) {
+			event.preventDefault();
+			ret.panels_tray_open = !ret.panels_tray_open;
+			ret.apply_layout();
 			return;
 		}
 
@@ -663,8 +675,8 @@ let move_report_prototype = {
 			box.style.setProperty("--mr-sec-order", i.toString());
 		}
 
-		let chips = ALL_SECTIONS
-			.filter(sec => !visible.includes(sec))
+		let hidden_sections = ALL_SECTIONS.filter(sec => !visible.includes(sec));
+		let chips = hidden_sections
 			.map(sec => `<span class="mr_chip" data-sec="${sec}" title="Show section">+ ${SECTION_TITLES[sec].toLowerCase()}</span>`)
 			.join(" ");
 
@@ -672,6 +684,23 @@ let move_report_prototype = {
 			this.chips.innerHTML = chips;
 			this.chips_cache = chips;
 		}
+
+		if (hidden_sections.length === 0) {
+			this.panels_tray_open = false;
+			this.panels_toggle.classList.add("hidden");
+			this.chips.classList.add("hidden");
+		} else {
+			let toggle_label = this.panels_tray_open
+				? `− panels (${hidden_sections.length})`
+				: `+ panels (${hidden_sections.length})`;
+			if (this.panels_toggle.textContent !== toggle_label) {
+				this.panels_toggle.textContent = toggle_label;
+			}
+			this.panels_toggle.classList.remove("hidden");
+			this.chips.classList.toggle("hidden", !this.panels_tray_open);
+		}
+
+		this.breadth_ctl.classList.toggle("hidden", !visible.includes("breadth") && !visible.includes("distribution"));
 
 		for (let sec of YSCALE_SECTIONS) {
 			let label = config[`move_report_${sec}_yscale`] === "log2" ? "log₂" : "lin";
@@ -736,13 +765,7 @@ let move_report_prototype = {
 	},
 
 	fmt_visits: function(v) {
-		if (typeof v !== "number") return "?";
-		if (v >= 1e8) return `${(v / 1e6).toFixed(0)}M`;
-		if (v >= 1e7) return `${(v / 1e6).toFixed(1)}M`;
-		if (v >= 999500) return `${(v / 1e6).toFixed(2)}M`;
-		if (v >= 100000) return `${(v / 1000).toFixed(0)}k`;
-		if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
-		return v.toString();
+		return fmt_visits(v);
 	},
 
 	verdict: function(points_lost) {				// --> [label, css class]
@@ -834,6 +857,14 @@ let move_report_prototype = {
 		}
 
 		let visible = this.visible_sections();
+
+		if (visible.includes("options")) {
+			let show_opt_visits = !visible.includes("history") && node.has_valid_analysis();
+			let opt_status = show_opt_visits ? `${this.fmt_visits(node.analysis.rootInfo.visits)} visits` : "";
+			if (this.options_status.textContent !== opt_status) {
+				this.options_status.textContent = opt_status;
+			}
+		}
 
 		for (let sec of visible) {
 			if (sec === "quality") {
@@ -1056,7 +1087,6 @@ let move_report_prototype = {
 			}
 
 			parts.push(`</table>`);
-			parts.push(`<div class="mr_dim mr_small">total visits: ${this.fmt_visits(node.analysis.rootInfo.visits)} — click a row to play it</div>`);
 			if (infos.some(info => info.explored)) {
 				parts.push(`<div class="mr_small mr_explored_note"><span class="mr_explored">explored</span>: score, win and visits come from searching the position after that move</div>`);
 			}
@@ -2371,7 +2401,7 @@ let move_report_prototype = {
 		let ctx = this.history_ctx;
 		let cap = type_scale.px("caption");
 		let x0 = chart_pads().left;
-		let x1 = canvas.width - Math.round(cap * 3.4);			// Room for move names at the line ends.
+		let x1 = canvas.width - Math.round(cap * 4.2);			// Room for move names at the line ends.
 		let y0 = Math.round(cap * 0.7);							// Room for the top value label.
 		let y1 = canvas.height - chart_pads().bottom;
 
@@ -2598,8 +2628,8 @@ let move_report_prototype = {
 		// before anything that depends on what is followed.
 
 		ctx.font = type_scale.canvas_font("caption", "bold");
-		let specs = lines.map(line => Object.assign({w: ctx.measureText(line.move).width + 8, h: cap + 4}, geometry.get(line)));
-		let mark_specs = unlabelled.map(d => ({w: ctx.measureText(d.mark.move).width + 8, h: cap + 4, px: [d.x + cap * 0.6], py: [d.y]}));
+		let specs = lines.map(line => Object.assign({w: ctx.measureText(line.move).width + 8, h: cap + 6}, geometry.get(line)));
+		let mark_specs = unlabelled.map(d => ({w: ctx.measureText(d.mark.move).width + 8, h: cap + 6, px: [d.x + cap * 0.6], py: [d.y]}));
 		let placements = eval_history.place_line_labels(specs.concat(mark_specs), obstacles, {x0: x0 + 1, y0: y0 + 1, x1: canvas.width - 1, y1: y1 - 1});
 		let label_box = (p, spec) => ({x0: p.x - spec.w / 2, y0: p.y - spec.h / 2, x1: p.x + spec.w / 2, y1: p.y + spec.h / 2});
 		lines.forEach((line, i) => {

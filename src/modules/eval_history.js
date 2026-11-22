@@ -202,8 +202,9 @@ exports.fmt_count = function(n) {						// 1500 --> "1.5k", 20000 --> "20k", 2000
 exports.place_line_labels = function(lines, obstacles, area) {
 
 	let taken = obstacles.slice();
+	let gap = 3;
 	let fits = (r) => r.x0 >= area.x0 && r.x1 <= area.x1 && r.y0 >= area.y0 && r.y1 <= area.y1 &&
-		!taken.some(t => r.x0 < t.x1 && t.x0 < r.x1 && r.y0 < t.y1 && t.y0 < r.y1);
+		!taken.some(t => r.x0 < t.x1 + gap && t.x0 < r.x1 + gap && r.y0 < t.y1 + gap && t.y0 < r.y1 + gap);
 
 	return lines.map(line => {
 
@@ -222,7 +223,7 @@ exports.place_line_labels = function(lines, obstacles, area) {
 		}
 
 		let j = n - 1;
-		for (let x = ex - line.w / 2 - 2; n > 1 && x >= line.px[0] + line.w / 2; x -= 3) {
+		for (let x = ex - line.w / 2 - 8; n > 1 && x >= line.px[0] + line.w / 2; x -= 3) {
 			while (j > 0 && line.px[j - 1] > x) {
 				j--;
 			}

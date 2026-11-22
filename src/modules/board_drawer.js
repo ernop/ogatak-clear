@@ -24,7 +24,7 @@ const eval_history = require("./eval_history");
 const {inherited_root, node_infos, node_best} = require("./explored");
 
 const {handicap_stones, moveinfo_filter, board_candidates, pad, new_2d_array, xy_to_s, float_to_hex_ff,
-	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html, info_cost, loss_text, ZERO_LOSS} = require("./utils");
+	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html, info_cost, loss_text, ZERO_LOSS, fmt_visits} = require("./utils");
 
 const ZERO_LOSS_BLUE = "#2f7cf6ff";			// Same blue as .mr_zero_loss in ogatak.css.
 
@@ -111,6 +111,7 @@ function init() {
 
 		has_handlers: false,
 		gridlines: null,
+		info_chips_open: false,
 
 		width: null,								// We need to store width, height, and square_size
 		height: null,
@@ -1300,6 +1301,13 @@ let board_drawer_prototype = {
 		return arr.filter((id, i) => INFO_BAR_ITEM_IDS.includes(id) && arr.indexOf(id) === i);
 	},
 
+	toggle_info_chips: function() {
+		this.info_chips_open = !this.info_chips_open;
+		if (hub.node && !hub.node.destroyed) {
+			this.draw_node_info(hub.node);
+		}
+	},
+
 	info_bar_html: function(node, override_moveinfo) {
 
 		let short_strings = {
@@ -1318,13 +1326,13 @@ let board_drawer_prototype = {
 			rules: () => {
 				let rules = safe_html(node.rules());
 				let long_rules = "";
-				if (rules.length > 14) {
+				if (rules.length > 12) {
 					long_rules = rules;
-					rules = rules.slice(0, 11) + "...";
+					rules = rules.slice(0, 9) + "...";
 				} else if (rules === "") {
 					rules = t.Unknown;
 				}
-				let inner = `<span class="info_label">${t.Rules}:</span> <span class="info_value">${pad(rules, 14)}</span>`;
+				let inner = `<span class="info_label">${t.Rules}:</span> <span class="info_value">${pad(rules, 12)}</span>`;
 				if (long_rules) {
 					inner = `<span title="${long_rules}">${inner}</span>`;
 				}
@@ -1332,14 +1340,14 @@ let board_drawer_prototype = {
 			},
 			komi: () => {
 				return `<span class="info_item boardinfo_komi"><span class="info_label">${t.Komi}:</span> ` +
-					`<span class="info_value">${pad(node.komi(), 5)}</span>${hide("komi")}</span>`;
+					`<span class="info_value">${pad(node.komi(), 4)}</span>${hide("komi")}</span>`;
 			},
 			show: () => {
 				let numbers_string;
 				if (!config.candidate_moves) {
-					numbers_string = "(nothing)";
+					numbers_string = "off";
 				} else if (config.no_ponder_no_candidates && !hub.engine.desired) {
-					numbers_string = "(not pondering)";
+					numbers_string = "paused";
 				} else {
 					let arr = config.numbers.split(" + ");
 					if (arr.length === 3) {
@@ -1349,7 +1357,7 @@ let board_drawer_prototype = {
 					}
 				}
 				return `<span class="info_item boardinfo_numbers"><span class="info_label">${t.Show}:</span> ` +
-					`<span class="info_value">${pad(numbers_string, 15)}</span>${hide("show")}</span>`;		// 15: "(not pondering)"
+					`<span class="info_value">${pad(numbers_string, 10)}</span>${hide("show")}</span>`;		// 10: "Visits (%)"
 			},
 			toplay: () => {
 				let active = (board.active === "b")
@@ -1358,12 +1366,12 @@ let board_drawer_prototype = {
 				return `<span class="info_item boardinfo_active">${active}${hide("toplay")}</span>`;
 			},
 			caps: () => {
-				let stone_counts = `${board.stones_b} : ${board.stones_w}`;
-				let capstring = `${board.caps_by_b} : ${board.caps_by_w}`;
+				let stone_counts = `${board.stones_b}:${board.stones_w}`;
+				let capstring = `${board.caps_by_b}:${board.caps_by_w}`;
 				let label = config.stone_counts ? t.Stn : t.Caps;
 				let value = config.stone_counts ? stone_counts : capstring;
 				return `<span class="info_item boardinfo_stone_counts"><span class="info_label">${label}:</span> ` +
-					`<span class="info_value">${pad(value, 10)}</span>${hide("caps")}</span>`;
+					`<span class="info_value">${pad(value, 7)}</span>${hide("caps")}</span>`;
 			},
 			score: () => {
 				let score = "";
@@ -1380,15 +1388,14 @@ let board_drawer_prototype = {
 				let visits = "";
 				let inherited = override_moveinfo ? null : inherited_root(node);
 				if (inherited) {
-					visits = `${inherited.visits} inherited`;
+					visits = `${fmt_visits(inherited.visits)} inh.`;
 				} else if (node.has_valid_analysis()) {
 					visits = override_moveinfo && override_moveinfo.explored
-						? `${override_moveinfo.visits} explored`
-						: `${override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[node_best(node)].visits} / ${node.analysis.rootInfo.visits}`;
+						? `${fmt_visits(override_moveinfo.visits)} exp.`
+						: `${fmt_visits(override_moveinfo ? override_moveinfo.visits : node.analysis.moveInfos[node_best(node)].visits)} / ${fmt_visits(node.analysis.rootInfo.visits)}`;
 				}
-				let digits = String(Math.max(config.ponder_visits, config.autoanalysis_visits)).length;		// Room for "limit / limit".
 				return `<span class="info_item"><span class="info_label">${t.Visits}:</span> ` +
-					`<span class="info_value">${pad(visits, 2 * digits + 3)}</span>${hide("visits")}</span>`;
+					`<span class="info_value">${pad(visits, 13)}</span>${hide("visits")}</span>`;		// 13: "99.9k / 10.0M"
 			},
 		};
 
@@ -1428,8 +1435,14 @@ let board_drawer_prototype = {
 				chips.push(`<span class="info_chip" data-item="${id}">+ ${INFO_BAR_LABELS[id]}</span>`);
 			}
 		}
-		if (chips.length) {
-			parts.push(`<span class="info_chips">${chips.join(" ")}</span>`);
+		if (chips.length === 0) {
+			this.info_chips_open = false;
+		} else {
+			let open_cls = this.info_chips_open ? " open" : "";
+			parts.push(`<span class="info_chips_toggle${open_cls}" title="Show hidden info bar items">+</span>`);
+			if (this.info_chips_open) {
+				parts.push(`<span class="info_chips">${chips.join(" ")}</span>`);
+			}
 		}
 		parts.push(`</div>`);
 		parts.push(`</div>`);

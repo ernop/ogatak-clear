@@ -625,8 +625,15 @@ Requirements now:
    of the panel's space.
 4. **Named sections, each with its own controls** — `quality`, `breadth`,
    `status`, `distribution`, `turn`, `lastmove`, `outcome`, `options`, `history`,
-   `comments`, `tree` — header buttons: move up (▲), move down (▼), hide (✕). Hidden
-   sections appear as "+ name" chips in the controls bar, click to restore.
+   `comments`, `tree` — header layout buttons (`▲`, `▼`, `✕`) reveal on
+   card-header hover (fixed layout, zero jitter), while active mode toggles
+   stay visible. Hidden sections collapse behind a single `+ panels (N)`
+   toggle button in `#mr_controls` that opens a wrapped tray on click;
+   `#mr_controls` wraps rather than clipping at the right edge, and the
+   `breadth` selector appears only when `breadth` or `distribution` is
+   visible (2026-11-22). Next Move Options shows total visits in its card
+   header only when Eval History is hidden (avoiding duplicate visit counts
+   and footer instruction lines).
    The variation tree is default-hidden; see `PRODUCT-workspace.md`.
 5. **Layout sizes are adjustable live from the panel itself**: a dim
    controls bar at the top offers width −/+ (card width) and chart −/+

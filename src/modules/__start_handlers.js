@@ -15,7 +15,7 @@
 // At least, all of this is my possibly-flawed understanding.
 
 const {ipcRenderer, webUtils} = require("electron");		// webUtils might not actually exist, depending on version. Don't use it directly.
-const {event_path_class_string} = require("./utils");
+const {event_path_class_string, wheel_steps_game} = require("./utils");
 
 // In olden days, when dealing with an event from a file being dragged onto the window, we could
 // access the filepath from .path but no longer as of v32...
@@ -37,7 +37,9 @@ const mousedown_event_is_electron_bug = parseInt(process.versions.electron) < 24
 		return false;
 	};
 
-// Wheel should scroll the current game...
+// Wheel steps moves only when the pointer is over the board itself. Over any
+// UI panel (Move Report, Settings, tabs, comments, overlays), the wheel only
+// scrolls that panel and never steps the game tree.
 
 window.addEventListener("wheel", (event) => {
 
@@ -45,19 +47,14 @@ window.addEventListener("wheel", (event) => {
 		return;
 	}
 
-	let path = event.composedPath();
-
-	for (let element of [tabber.outer_div, comment_drawer.textarea]) {		// 2 items can have scrollbars.
-		if (element.scrollHeight > element.clientHeight) {					// If they do, the mouse wheel should not be used to scroll the game.
-			if (path.some(item => item === element)) {						// Only if the mouse is actually over them, though.
-				return;
-			}
-		}
+	if (!wheel_steps_game(event.composedPath(), document.getElementById("gridder_board_graph"))) {
+		return;
 	}
 
+	event.preventDefault();
 	if (event.deltaY < 0) hub.input_up_down(-1);
 	if (event.deltaY > 0) hub.input_up_down(1);
-});
+}, {passive: false});
 
 // Clicking a tab should switch tabs...
 
@@ -89,6 +86,13 @@ board_drawer.htmltable.addEventListener("mousedown", (event) => {
 
 board_drawer.infodiv.addEventListener("mousedown", (event) => {
 	if (mousedown_event_is_electron_bug(event)) {
+		return;
+	}
+
+	let toggle = event.target.closest(".info_chips_toggle");
+	if (toggle) {
+		event.preventDefault();
+		board_drawer.toggle_info_chips();
 		return;
 	}
 

@@ -107,11 +107,15 @@ The strip above the board is not a fixed 12-span table. It is:
   Black name + rank on the **left**, White name + rank on the **right**.
   Absent names are omitted, not replaced with "Black player" placeholders
   (same rule as the Move Report identity strip). Toggle:
-  `info_bar_show_players` (default true).
-- **Stats**, an ordered list `info_bar_items`. Each item is hideable and
-  restorable from a "+ name" chip on the bar itself. Default:
+  `info_bar_show_players` (default false since 2026-11-22: Move Report's
+  identity strip already shows both players and active turn).
+- **Stats**, an ordered list `info_bar_items`. Each item's `✕` hide button
+  reveals on hover (fixed width, no layout shift), and hidden items are
+  restored via a hover-revealed `+` toggle on the bar (collapsed at rest so
+  restore chips do not add visual noise) or in Settings. Default since
+  2026-11-22 (facts not already duplicated in Move Report):
 
-      rules, toplay, caps, komi, score, show, visits
+      rules, komi, caps, show
 
   Meaning:
 
@@ -123,16 +127,16 @@ The strip above the board is not a fixed 12-span table. It is:
   | `komi` | Komi (click cycles, stock) |
   | `score` | Labeled score lead (`B+…` / `W+…`) |
   | `show` | Candidate number type (click cycles, stock) |
-  | `visits` | Move visits / root visits |
+  | `visits` | Move visits / root visits (compact SI formatting) |
 
 - The info bar must not widen the board column. It wraps inside the
   width the board already owns.
-- **Changing values never re-wrap the bar** (2026-09-26). Each value sits
-  in a fixed-width slot (`pad()` widths, spaces kept by `white-space:
-  pre`). The slots are Score 8, Visits wide enough for "limit / limit" at
-  the current visit limits, Show 15, Captures 10, Komi 5, Rules 14. So an
-  unanalysed position's empty Score and Visits take the same room as
-  filled ones, and so do growing visit counts.
+- **Changing values never re-wrap the bar** (2026-09-26, tightened
+  2026-11-22). Each value sits in a fixed-width slot (`pad()` widths,
+  spaces kept by `white-space: pre`). The slots are Rules 12, Komi 4,
+  Caps 7, Show 10, Score 8, Visits 13 (compact `fmt_visits` such as
+  `33.1k / 60.5k`). So an unanalysed position's empty Score and Visits
+  take the same room as filled ones, and so do growing visit counts.
   - Why: the board's square size is derived from the height below the
     bar (see "Systems that fight these rules"). Every re-wrap therefore
     moved and resized the board and shifted the right-hand column.
@@ -142,6 +146,17 @@ The strip above the board is not a fixed 12-span table. It is:
     something: which items are shown, a visit limit, zoom, or text
     size.
 - Engine-error and editing messages still replace the bar when active.
+
+### Mouse wheel scoping (2026-11-22)
+
+- The mouse wheel steps moves in the game **only when the pointer is over
+  the board** (`#gridder_board_graph`, calling `preventDefault()`).
+- Over any UI panel (`#movereport`, `#settings`, `#tabdiv`, `#boardinfo`,
+  `#comments`, modal overlays), the wheel scrolls that panel normally and
+  never steps the game tree.
+- Rationale: upstream checked only `#tabdiv` and `#comments` when
+  scrollable, so wheeling over Move Report or Settings scrolled the UI
+  and stepped the game tree simultaneously.
 
 ## Panes (board, analysis, tree, comments, …)
 

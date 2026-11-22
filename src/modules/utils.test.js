@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("assert");
-const {select_candidates, candidate_count_label, info_cost, loss_text, ZERO_LOSS} = require("./utils");
+const {select_candidates, candidate_count_label, info_cost, loss_text, ZERO_LOSS, wheel_steps_game, fmt_visits} = require("./utils");
 
 // Black to play; scoreLead is Black-POV, so cost = best lead - lead. The best
 // move's index is the caller's (explored.node_best); here it is A1.
@@ -130,5 +130,27 @@ assert.strictEqual(loss_text(info_cost(white_infos[1], white_infos[0].scoreLead,
 assert.strictEqual(candidate_count_label(0), "Best only");
 assert.strictEqual(candidate_count_label(1), "Best + 1 move");
 assert.strictEqual(candidate_count_label(4), "Best + 4 moves");
+
+// Mouse wheel steps the game only when the pointer is over the board element,
+// never when scrolling Move Report, Settings, tabs, comments, or overlays.
+let board = {id: "gridder_board_graph"};
+let td = {tag: "TD"};
+let report = {id: "movereport"};
+let overlay = {id: "fbox"};
+assert.strictEqual(wheel_steps_game([td, board, {id: "gridder"}], board), true);
+assert.strictEqual(wheel_steps_game([board], board), true);
+assert.strictEqual(wheel_steps_game([report, {id: "gridder"}], board), false);
+assert.strictEqual(wheel_steps_game([overlay], board), false);
+assert.strictEqual(wheel_steps_game([], board), false);
+assert.strictEqual(wheel_steps_game([board], null), false);
+
+assert.strictEqual(fmt_visits(0), "0");
+assert.strictEqual(fmt_visits(999), "999");
+assert.strictEqual(fmt_visits(1500), "1.5k");
+assert.strictEqual(fmt_visits(33135), "33.1k");
+assert.strictEqual(fmt_visits(120000), "120k");
+assert.strictEqual(fmt_visits(1250000), "1.25M");
+assert.strictEqual(fmt_visits(12500000), "12.5M");
+assert.strictEqual(fmt_visits(null), "?");
 
 console.log("utils tests passed");

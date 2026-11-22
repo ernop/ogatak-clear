@@ -568,3 +568,20 @@ exports.shuffled = function(orig) {
 	}
 	return arr;
 };
+
+// Mouse wheel steps the game only when the pointer is over the board itself,
+// never when scrolling panels (Move Report, Settings, comments, overlays).
+
+exports.wheel_steps_game = function(path, board_element) {
+	return Boolean(board_element && Array.isArray(path) && path.includes(board_element));
+};
+
+exports.fmt_visits = function(v) {
+	if (typeof v !== "number") return "?";
+	if (v >= 1e8) return `${(v / 1e6).toFixed(0)}M`;
+	if (v >= 1e7) return `${(v / 1e6).toFixed(1)}M`;
+	if (v >= 999500) return `${(v / 1e6).toFixed(2)}M`;
+	if (v >= 100000) return `${(v / 1000).toFixed(0)}k`;
+	if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+	return v.toString();
+};
