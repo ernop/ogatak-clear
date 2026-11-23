@@ -1330,7 +1330,7 @@ let board_drawer_prototype = {
 		if (fx >= 0 && fx < this.width && fy >= 0 && fy < this.height) {
 			this.needed_marks[fx][fy] = {type: "stone_move_origin"};
 		}
-		let hover = hub.mouse_point();
+		let hover = hub.moving_stone.hover || hub.mouse_point();
 		if (hover && hover !== from && hover.length === 2 && node.get_board().state_at(hover) === "") {
 			let tx = hover.charCodeAt(0) - 97;
 			let ty = hover.charCodeAt(1) - 97;
@@ -1361,7 +1361,7 @@ let board_drawer_prototype = {
 		if (hub.moving_stone && hub.moving_stone.node === node) {
 			let gtp = node.get_board().gtp(hub.moving_stone.from);
 			let side = hub.moving_stone.colour === "b" ? "Black" : "White";
-			this.infodiv.innerHTML = `<div class="info_bar"><div class="info_stats"><span class="info_item"><span class="info_label">Move ${side} ${safe_html(gtp)}:</span> <span class="info_value">click empty intersection (Esc to cancel)</span></span></div></div>`;
+			this.infodiv.innerHTML = `<div class="info_bar"><div class="info_stats"><span class="info_item"><span class="info_label">Move ${side} ${safe_html(gtp)}:</span> <span class="info_value">release on empty intersection (Esc to cancel)</span></span></div></div>`;
 			return;
 		}
 

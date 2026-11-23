@@ -320,6 +320,10 @@ body.row_dragging, body.row_dragging * {
 	cursor: row-resize !important;
 }
 
+body.stone_dragging, body.stone_dragging * {
+	cursor: grabbing !important;
+}
+
 /* ----------------------------------------------------------------------------------------------------------------------------------------------- */
 
 /* The tree canvas is hidden in favour of the Move Report panel (see PRODUCT.md).

@@ -399,6 +399,9 @@ let hub_main_props = {
 
 		config.avoid_set = {};
 		this.moving_stone = null;
+		if (typeof document !== "undefined" && document.body) {
+			document.body.classList.remove("stone_dragging");
+		}
 		this.preview_seq = null;
 		if (this.move_origin && (this.move_origin.destroyed || this.move_origin === node)) {
 			this.move_origin = null;
@@ -1301,18 +1304,6 @@ let hub_main_props = {
 			let mod = Boolean(event.ctrlKey || event.metaKey);
 
 			if (this.moving_stone && this.moving_stone.node === this.node) {
-				if (event.button === 2 || s === this.moving_stone.from) {
-					this.cancel_move_stone();
-					return;
-				}
-				if (mod && (board.state_at(s) === "b" || board.state_at(s) === "w")) {
-					this.start_move_stone(s);
-					return;
-				}
-				if (!board.state_at(s)) {
-					this.complete_move_stone(s);
-					return;
-				}
 				this.cancel_move_stone();
 				return;
 			}
@@ -1377,7 +1368,22 @@ let hub_main_props = {
 		if (colour !== "b" && colour !== "w") {
 			return;
 		}
-		this.moving_stone = {node: this.node, from: s, colour};
+		this.moving_stone = {node: this.node, from: s, colour, hover: s};
+		if (typeof document !== "undefined" && document.body) {
+			document.body.classList.add("stone_dragging");
+		}
+		board_drawer.draw_standard(this.node);
+	},
+
+	update_move_stone_hover: function(s) {
+		if (!this.moving_stone || this.moving_stone.node !== this.node) {
+			return;
+		}
+		let next = s || null;
+		if (this.moving_stone.hover === next) {
+			return;
+		}
+		this.moving_stone.hover = next;
 		board_drawer.draw_standard(this.node);
 	},
 
@@ -1386,8 +1392,24 @@ let hub_main_props = {
 			return false;
 		}
 		this.moving_stone = null;
+		if (typeof document !== "undefined" && document.body) {
+			document.body.classList.remove("stone_dragging");
+		}
 		this.draw();
 		return true;
+	},
+
+	finish_move_stone_drop: function(to_s) {
+		if (!this.moving_stone || this.moving_stone.node !== this.node) {
+			return false;
+		}
+		let board = this.node.get_board();
+		if (to_s && to_s !== this.moving_stone.from && board.state_at(to_s) === "") {
+			this.complete_move_stone(to_s);
+			return true;
+		}
+		this.cancel_move_stone();
+		return false;
 	},
 
 	complete_move_stone: function(to_s) {
@@ -1397,6 +1419,9 @@ let hub_main_props = {
 		let origin = this.node;
 		let from_s = this.moving_stone.from;
 		this.moving_stone = null;
+		if (typeof document !== "undefined" && document.body) {
+			document.body.classList.remove("stone_dragging");
+		}
 
 		let moved = move_stone_on_tree(origin, from_s, to_s, new_node);
 		if (!moved) {
@@ -1501,7 +1526,7 @@ let hub_main_props = {
 		move_report.hover_board_point(s);
 
 		if (this.moving_stone && this.moving_stone.node === this.node) {
-			board_drawer.draw_standard(this.node);
+			this.update_move_stone_hover(s);
 			return;
 		}
 

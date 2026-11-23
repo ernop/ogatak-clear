@@ -176,16 +176,25 @@ for (let s of ["mousemove", "mouseleave"]) {
 
 }
 
-for (let s of ["mouseup", "blur"]) {
+window.addEventListener("mouseup", (event) => {
+	if (hub.moving_stone) {
+		hub.finish_move_stone_drop(event_path_class_string(event, "td_"));
+	}
+	grapher.dragging = false;
+	grapher.handle_dragging = false;
+	comment_drawer.handle_dragging = false;
+	document.body.classList.remove("col_dragging", "row_dragging");
+});
 
-	window.addEventListener(s, (event) => {
-		grapher.dragging = false;
-		grapher.handle_dragging = false;
-		comment_drawer.handle_dragging = false;
-		document.body.classList.remove("col_dragging", "row_dragging");
-	});
-
-}
+window.addEventListener("blur", () => {
+	if (hub.moving_stone) {
+		hub.cancel_move_stone();
+	}
+	grapher.dragging = false;
+	grapher.handle_dragging = false;
+	comment_drawer.handle_dragging = false;
+	document.body.classList.remove("col_dragging", "row_dragging");
+});
 
 // Dragging the resize handles should adjust the graph width / comment box height...
 
@@ -212,6 +221,13 @@ comment_drawer.handle.addEventListener("mousedown", (event) => {
 });
 
 window.addEventListener("mousemove", (event) => {
+	if (hub.moving_stone) {
+		if (!event.buttons) {
+			hub.cancel_move_stone();
+		} else {
+			hub.update_move_stone_hover(event_path_class_string(event, "td_"));
+		}
+	}
 	if (grapher.handle_dragging) {
 		if (!event.buttons) {
 			grapher.handle_dragging = false;

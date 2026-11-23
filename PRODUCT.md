@@ -706,11 +706,14 @@ The **variation tree** is visible by default inside the Dockview workspace
    gradient (or blue star). Next-move variation rings sit slightly inset so
    both player-turn outline and variation mark remain distinguishable.
 
-2. **Ctrl+click stone moving (`src/modules/stone_move.js`).**
-   Holding Ctrl (or Cmd on macOS) and clicking any stone on the board picks
-   it up (highlighted with a gold origin ring; Esc or clicking the origin
-   cancels). Clicking any empty intersection moves the stone there in the
-   cleanest SGF FF[4] form without altering the original sequence:
+2. **Ctrl+drag stone moving (`src/modules/stone_move.js`).**
+   Holding Ctrl (or Cmd on macOS), pressing on any stone on the board,
+   dragging to an empty intersection (with a gold origin ring and live
+   translucent destination preview), and releasing the mouse button drops
+   the stone there in one gesture — no second click needed. Releasing on
+   the origin stone, an occupied intersection, outside the board, or
+   pressing `Esc` cancels cleanly. SGF FF[4] representation without altering
+   the original sequence:
    - Moving the exact stone played on the current node (when legal from
      `node.parent`) creates or reuses a sibling move variation off
      `node.parent`.
