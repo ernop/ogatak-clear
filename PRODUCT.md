@@ -706,24 +706,52 @@ The **variation tree** is visible by default inside the Dockview workspace
    gradient (or blue star). Next-move variation rings sit slightly inset so
    both player-turn outline and variation mark remain distinguishable.
 
-2. **Ctrl+drag stone moving (`src/modules/stone_move.js`).**
+2. **Ctrl+drag stone moving & What-If Impact Comparison (`src/modules/stone_move.js`).**
    Holding Ctrl (or Cmd on macOS), pressing on any stone on the board,
    dragging to an empty intersection (with a gold origin ring and live
    translucent destination preview), and releasing the mouse button drops
    the stone there in one gesture — no second click needed. Releasing on
    the origin stone, an occupied intersection, outside the board, or
-   pressing `Esc` cancels cleanly. SGF FF[4] representation without altering
-   the original sequence:
-   - Moving the exact stone played on the current node (when legal from
-     `node.parent`) creates or reuses a sibling move variation off
-     `node.parent`.
-   - Moving any earlier stone or setup stone creates or reuses a child
-     setup branch off `node` carrying `AE[from]`, `AB[to]`/`AW[to]`,
-     `PL[active]`, and a note comment (`C[Moved <Color> <from> -> <to>]`).
-     Setup stone-move branches draw with a gold border in the Variation Tree.
-   - Moving a stone automatically starts KataGo analysis on the new position
-     if paused, and shows a **`↩ Return to #N`** button in the workspace bar
-     that jumps straight back to the original node in one click.
+   pressing `Esc` cancels cleanly.
+   - **One sibling variation, glommed in place; original stays main line.**
+     Moving any stone on a non-root position creates ONE sibling variation
+     off `node.parent` (same depth as `node`, appended after
+     `parent.children[0]` and entered with `{bless: false}` so the
+     untouched game line remains both the SGF main line and the default
+     child). Consecutive drags on a childless stone-move sibling glom
+     together into that single sibling in place, always emitting legal SGF
+     FF[4]: a clean single move (`;B[to]` / `;W[to]`) whenever the target
+     board equals a legal move from `parent`, or the exact minimal setup
+     diff (`AE`/`AB`/`AW` + `PL[active]`) otherwise, never mixing move and
+     setup properties. Dragging stones back so the board matches the
+     original collapses the redundant sibling and returns to the main line.
+     If the sibling already has played children, a new drag creates a new
+     sibling rather than mutating the parent of an existing variation. At
+     the root node (which has no parent in SGF), the variation is created
+     as a child off root and subsequent drags glom into it in place.
+     Stone-move siblings draw with a gold border in the Variation Tree.
+   - **Live What-If Impact visualization.** Moving a stone answers two
+     questions immediately: *"would the game be better or worse for Black
+     or White if this stone were here instead?"* and *"does the next best
+     move change?"*. While viewing a stone-move sibling:
+     - **On the Go board:** dashed gold ghost rings mark each stone's
+       original intersection, gold arrows connect each original square to
+       the relocated stone, and gold rings outline each relocated stone
+       (drawn beneath candidates so analysis numbers remain unobstructed).
+     - **What-If Impact Banner** (above the board, hidden when not on a
+       what-if sibling): displays the moved stones (`B D4 → C4`), a
+       high-contrast labeled score-swing verdict (`+2.1 pts better for
+       Black` / `1.8 pts better for White` / `Even vs original`), a
+       centered diverging W/B score-shift gauge bar, explicit original vs.
+       now scores and winrate shift (`Orig B+1.45 → Now B+3.60 (+5% B)`),
+       whether the best move changed (`Best move: R14 → Q14 (orig R14 now
+       −1.4)`), and a one-click `↩ Original` button. If the original
+       position has no analysis yet, a single quiet low-priority baseline
+       probe runs automatically so the comparison fills in without
+       interrupting the live what-if search.
+     - **Next Move Options:** tags the original position's best move with
+       an inline `orig ★` badge so you can see where the original best move
+       landed after moving the stone(s).
 
 3. **Scale-free continuation narrowness & Variation Space (`corridor`).**
    Instead of arbitrary fixed point cutoffs, continuation narrowness is

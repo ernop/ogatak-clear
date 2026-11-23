@@ -22,9 +22,24 @@ if (!in_main_process && !global.user_data_path) {
 	throw new Error("config_io: global.user_data_path not set!");
 }
 
-exports.filepath = in_main_process ?
-		path.join(electron.app.getPath("userData"), exports.filename) :
-		path.join(global.user_data_path, exports.filename);
+let user_data_dir = in_main_process ? electron.app.getPath("userData") : global.user_data_path;
+exports.filepath = path.join(user_data_dir, exports.filename);
+
+// One-time non-destructive migration when moving from upstream's "Ogatak"
+// userData folder to "ogatak-clear": copy existing config.json if present so
+// KataGo paths, weights, and settings carry over seamlessly.
+if (in_main_process && !fs.existsSync(exports.filepath)) {
+	let legacy_filepath = path.join(path.dirname(user_data_dir), "Ogatak", exports.filename);
+	if (legacy_filepath !== exports.filepath && fs.existsSync(legacy_filepath)) {
+		try {
+			fs.mkdirSync(user_data_dir, {recursive: true});
+			fs.copyFileSync(legacy_filepath, exports.filepath);
+			console.log(`Copied legacy config from ${legacy_filepath} to ${exports.filepath}`);
+		} catch (err) {
+			console.log(`Could not copy legacy config: ${err.toString()}`);
+		}
+	}
+}
 
 exports.pre_existed = fs.existsSync(exports.filepath);
 

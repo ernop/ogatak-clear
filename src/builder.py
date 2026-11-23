@@ -5,7 +5,7 @@ zips = {
 	"linux": "electron_zipped/electron-v23.3.13-linux-x64.zip",
 }
 
-# To build Ogatak: (for info see https://electronjs.org/docs/tutorial/application-distribution)
+# To build ogatak-clear: (for info see https://electronjs.org/docs/tutorial/application-distribution)
 #
 # Obtain the appropriate Electron asset named above, from https://github.com/electron/electron/releases
 # Create a folder called ./electron_zipped and place the Electron asset in it
@@ -20,7 +20,7 @@ folders = ["modules", "gfx", "vendor"]
 for key, value in zips.items():
 	if not os.path.exists(value):
 		continue
-	build_dir = "dist/ogatak-{}-{}".format(version, key)
+	build_dir = "dist/ogatak-clear-{}-{}".format(version, key)
 	build_app_dir = os.path.join(build_dir, "resources/app")
 	os.makedirs(build_app_dir)
 	for file in useful_files:
@@ -32,20 +32,20 @@ for key, value in zips.items():
 	z.extractall(build_dir)
 	z.close()
 	if os.path.exists(os.path.join(build_dir, "electron.exe")):
-		os.rename(os.path.join(build_dir, "electron.exe"), os.path.join(build_dir, "ogatak.exe"))
+		os.rename(os.path.join(build_dir, "electron.exe"), os.path.join(build_dir, "ogatak-clear.exe"))
 	if os.path.exists(os.path.join(build_dir, "electron")):
-		os.rename(os.path.join(build_dir, "electron"), os.path.join(build_dir, "ogatak"))
+		os.rename(os.path.join(build_dir, "electron"), os.path.join(build_dir, "ogatak-clear"))
 
 	# We could and maybe should...
 	"""
 	if key == "windows":
-		electron_exe = os.path.join(build_dir, "ogatak.exe")
+		electron_exe = os.path.join(build_dir, "ogatak-clear.exe")
 		print("Running rcedit...")
 		subprocess.run([
 			"rcedit-x64.exe",
 			electron_exe,
-			"--set-version-string", "FileDescription", "Ogatak",
-			"--set-version-string", "ProductName", "Ogatak",
+			"--set-version-string", "FileDescription", "ogatak-clear",
+			"--set-version-string", "ProductName", "ogatak-clear",
 			"--set-version-string", "LegalCopyright", "Copyright 2026 Rooklift",
 			"--set-file-version", version,
 			"--set-product-version", version

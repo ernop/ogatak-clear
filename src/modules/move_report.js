@@ -40,9 +40,12 @@ const type_scale = require("./type_scale");
 const workspace = require("./workspace");
 const narrowness = require("./narrowness");
 const continuation_prober = require("./continuation_prober");
+const {what_if_origin_node, summarize_what_if} = require("./stone_move");
+const {new_query} = require("./query");
 const {info_cost, loss_text, ZERO_LOSS, safe_html, board_candidates, options_table_infos, fmt_visits} = require("./utils");
 
 const SECTION_TITLES = {
+	board:        "BOARD",
 	history:      "EVAL HISTORY",
 	options:      "NEXT MOVE OPTIONS",
 	corridor:     "VARIATION SPACE",
@@ -55,9 +58,11 @@ const SECTION_TITLES = {
 	breadth:      "CHOICE BREADTH HISTORY",
 	distribution: "CURRENT CANDIDATE VALUES",
 	turn:         "TURN",
+	settings:     "SETTINGS",
 };
 
 const ALL_SECTIONS = workspace.PANEL_IDS;
+const TRAY_SECTIONS = workspace.TRAY_PANEL_IDS;
 const CHART_SECTIONS = ["quality", "breadth", "status", "distribution"];
 const YSCALE_SECTIONS = ["quality", "status"];
 const HTML_SECTIONS = ["turn", "lastmove", "outcome", "options", "corridor"];
@@ -238,7 +243,7 @@ function init() {
 	parts.push(`<div id="mr_panel_pool" class="hidden">`);
 	for (let sec of ALL_SECTIONS) {
 		let is_canvas = CHART_SECTIONS.includes(sec) || sec === "history";
-		let body_cls = (is_canvas || sec === "tree" || sec === "comments")
+		let body_cls = (is_canvas || sec === "board" || sec === "tree" || sec === "comments" || sec === "settings")
 			? "mr_panel_body mr_panel_body_fill"
 			: "mr_panel_body mr_panel_body_scroll";
 		parts.push(`<div class="mr_panel" id="mr_panel_${sec}" data-sec="${sec}">`);
@@ -268,11 +273,21 @@ function init() {
 
 	outer.innerHTML = parts.join("\n");
 
-	// Adopt stock widgets into their Dockview panels. Their ids stay unchanged,
-	// so comment_drawer, tree_drawer and all input handlers work untouched.
+	// Adopt stock widgets into their unified Dockview panels. Their DOM ids
+	// stay unchanged, so board_drawer, comment_drawer, tree_drawer, settings_pane,
+	// and all input handlers continue working untouched.
+
+	let board_host = document.getElementById("mr_seccontent_board");
+	let what_if_bar = document.createElement("div");
+	what_if_bar.id = "mr_what_if";
+	what_if_bar.className = "mr_what_if hidden";
+	board_host.appendChild(document.getElementById("boardinfo"));
+	board_host.appendChild(what_if_bar);
+	board_host.appendChild(document.getElementById("gridder_board_graph"));
 
 	document.getElementById("mr_seccontent_comments").appendChild(document.getElementById("comments"));
 	document.getElementById("mr_seccontent_tree").appendChild(document.getElementById("treecanvas"));
+	document.getElementById("mr_seccontent_settings").appendChild(document.getElementById("settings"));
 
 	let panel_elements = {};
 	let seccontents = {};
@@ -338,6 +353,10 @@ function init() {
 		history_status: document.getElementById("mr_history_status"),
 		options_status: document.getElementById("mr_options_status"),
 		corridor_status: document.getElementById("mr_corridor_status"),
+		what_if_bar: what_if_bar,
+		what_if_cache: "",
+		what_if_baselines: new Map(),		// orig_node.id -> KataGo analysis object (quiet baseline probe)
+		what_if_probing: new Set(),			// orig_node.id currently being probed
 		preview_seq_key: "",
 
 	});
@@ -352,6 +371,7 @@ function init() {
 					tree_drawer.weak_draw = true;
 				}
 				if (global.hub && hub.node && !hub.node.destroyed) {
+					hub.redraw_if_desired_square_size_mismatch();
 					ret.draw(hub.node);
 				}
 			},
@@ -359,8 +379,16 @@ function init() {
 				if (id === "tree" && global.tree_drawer) {
 					tree_drawer.weak_draw = true;
 				}
+				if (id === "board" && global.hub && hub.node && !hub.node.destroyed) {
+					hub.redraw_if_desired_square_size_mismatch();
+				}
 				if (global.hub && hub.node && !hub.node.destroyed) {
 					ret.draw(hub.node);
+				}
+			},
+			on_panel_removed: (id) => {
+				if (id === "settings" && global.settings_pane) {
+					settings_pane.on_dock_closed();
 				}
 			},
 		}
@@ -381,9 +409,15 @@ function init() {
 			return;
 		}
 
-		if (event.target.closest(".mr_return_origin")) {
+		if (event.target.closest(".mr_return_origin") || event.target.closest("[data-act='return_orig']")) {
 			event.preventDefault();
-			hub.return_to_move_origin();
+			let orig = what_if_origin_node(hub.node);
+			if (orig) {
+				hub.move_origin = null;
+				hub.set_node(orig, {bless: false});
+			} else {
+				hub.return_to_move_origin();
+			}
 			return;
 		}
 
@@ -577,6 +611,7 @@ function init() {
 	// tab switches, window resize, maximize, and zoom redraw at exact size.
 
 	let observed_boxes = [
+		ret.seccontents.board,
 		ret.quality_canvas.parentElement,
 		ret.breadth_canvas.parentElement,
 		ret.status_canvas.parentElement,
@@ -602,6 +637,7 @@ function init() {
 		ret.resize_frame = requestAnimationFrame(() => {
 			ret.resize_frame = null;
 			if (global.hub && hub.node && !hub.node.destroyed) {
+				hub.redraw_if_desired_square_size_mismatch();
 				ret.draw(hub.node);
 			}
 		});
@@ -625,6 +661,18 @@ let move_report_prototype = {
 	sync_sections_from_config: function() {
 		if (this.workspace) {
 			this.workspace.sync_open_panels(config.move_report_sections);
+		}
+	},
+
+	open_settings_panel: function() {
+		if (this.workspace) {
+			this.workspace.open_settings();
+		}
+	},
+
+	close_settings_panel: function() {
+		if (this.workspace) {
+			this.workspace.close_settings();
 		}
 	},
 
@@ -734,7 +782,7 @@ let move_report_prototype = {
 	apply_layout: function() {
 
 		let visible = this.visible_sections();
-		let hidden_sections = ALL_SECTIONS.filter(sec => !visible.includes(sec));
+		let hidden_sections = TRAY_SECTIONS.filter(sec => !visible.includes(sec));
 		let chips = hidden_sections
 			.map(sec => `<span class="mr_chip" data-sec="${sec}" title="Open panel">+ ${SECTION_TITLES[sec].toLowerCase()}</span>`)
 			.join(" ");
@@ -761,9 +809,11 @@ let move_report_prototype = {
 
 		this.breadth_ctl.classList.toggle("hidden", !visible.includes("breadth") && !visible.includes("distribution"));
 
-		// Show the one-click return button whenever we branched away via Ctrl+click stone move.
+		// Show the top-bar return button when navigated deeper off a stone-move
+		// branch (when directly on the what-if sibling, the banner already shows ↩ Original).
 		let origin = global.hub ? hub.move_origin : null;
-		let show_origin = Boolean(origin && !origin.destroyed && origin !== hub.node);
+		let on_what_if = Boolean(global.hub && hub.node && what_if_origin_node(hub.node));
+		let show_origin = Boolean(origin && !origin.destroyed && origin !== hub.node && !on_what_if);
 		this.return_origin_btn.classList.toggle("hidden", !show_origin);
 		if (show_origin) {
 			let lbl = origin.depth > 0 ? `↩ Return to #${origin.depth}` : `↩ Return to start`;
@@ -862,6 +912,153 @@ let move_report_prototype = {
 		for (let el of element.querySelectorAll("[data-nar-pct]")) {
 			el.style.setProperty("--nar-pct", el.dataset.narPct + "%");
 		}
+		for (let el of element.querySelectorAll("[data-wi-pct]")) {
+			el.style.setProperty("--wi-pct", el.dataset.wiPct + "%");
+		}
+	},
+
+	// Quietly fetch a single low-priority baseline analysis for the original
+	// position if the user Ctrl+dragged a stone before KataGo analyzed it.
+
+	ensure_what_if_baseline: function(orig_node) {
+		if (!orig_node || orig_node.destroyed || orig_node.has_valid_analysis()) {
+			return;
+		}
+		if (this.what_if_baselines.has(orig_node.id) || this.what_if_probing.has(orig_node.id)) {
+			return;
+		}
+		if (!global.hub || !hub.engine || !hub.engine.exe || !hub.engine.received_version || !hub.engine.version) {
+			return;
+		}
+		let visits = Math.max(150, config.continuation_probe_visits || 120);
+		let q;
+		try {
+			q = new_query(orig_node, hub.engine.version, visits, false);
+		} catch (err) {
+			return;
+		}
+		q.priority = -5;
+		q.reportDuringSearchEvery = 1e9;
+		let orig_id = orig_node.id;
+		this.what_if_probing.add(orig_id);
+		hub.engine.probe(q, (res) => {
+			this.what_if_probing.delete(orig_id);
+			if (res && res.rootInfo && typeof res.rootInfo.scoreLead === "number") {
+				this.what_if_baselines.set(orig_id, res);
+				if (global.hub && hub.node && !hub.node.destroyed) {
+					this.draw(hub.node);
+				}
+			}
+		});
+	},
+
+	draw_what_if: function(node) {
+		let orig = what_if_origin_node(node);
+		let was_hidden = this.what_if_bar.classList.contains("hidden");
+		if (!orig) {
+			if (!was_hidden) {
+				this.what_if_bar.classList.add("hidden");
+				this.what_if_bar.innerHTML = "";
+				this.what_if_cache = "";
+				if (global.hub && hub.node && !hub.node.destroyed) {
+					hub.redraw_if_desired_square_size_mismatch();
+				}
+			}
+			return null;
+		}
+
+		this.ensure_what_if_baseline(orig);
+		let override = this.what_if_baselines.get(orig.id) || null;
+		let sum = summarize_what_if(orig, node, override);
+		if (!sum) {
+			return null;
+		}
+
+		let parts = [];
+		let moved_text = sum.summary || "Modified board";
+
+		if (sum.has_orig && sum.has_mod) {
+			let verdict_cls = sum.better_for === "b" ? "mr_wi_b" : (sum.better_for === "w" ? "mr_wi_w" : "mr_wi_even");
+			let verdict_text;
+			if (sum.better_for === "even") {
+				verdict_text = "Even vs original";
+			} else {
+				let side = sum.better_for === "b" ? "Black" : "White";
+				verdict_text = `+${sum.abs_pts.toFixed(1)} pts better for ${side}`;
+			}
+
+			let wr_shift = "";
+			if (sum.delta_wr_bpov !== null && Math.abs(sum.delta_wr_bpov) >= 0.5) {
+				let wr_side = sum.delta_wr_bpov > 0 ? "B" : "W";
+				wr_shift = ` (+${Math.abs(sum.delta_wr_bpov).toFixed(0)}% ${wr_side})`;
+			}
+
+			// Visual diverging gauge: centered at Original (0); saturates gracefully
+			// via tanh(delta / 5) so both 0.5 pt nuances and 8+ pt swings read cleanly.
+			let mag_pct = Math.round(Math.min(100, Math.abs(Math.tanh(sum.delta_bpov / 5)) * 100));
+			let left_pct = sum.better_for === "w" ? mag_pct : 0;
+			let right_pct = sum.better_for === "b" ? mag_pct : 0;
+
+			let gauge_html =
+				`<span class="mr_wi_gauge" title="Visual score shift vs original position (W left, B right)">` +
+				`<span class="mr_wi_glabel">W</span>` +
+				`<span class="mr_wi_track">` +
+				`<span class="mr_wi_half mr_wi_half_w"><span class="mr_wi_fill mr_wi_fill_w" data-wi-pct="${left_pct}"></span></span>` +
+				`<span class="mr_wi_zero"></span>` +
+				`<span class="mr_wi_half mr_wi_half_b"><span class="mr_wi_fill mr_wi_fill_b" data-wi-pct="${right_pct}"></span></span>` +
+				`</span>` +
+				`<span class="mr_wi_glabel">B</span>` +
+				`</span>`;
+
+			let anchor_html = `<span class="mr_wi_anchors">Orig ${this.fmt_score(sum.orig_lead)} → Now ${this.fmt_score(sum.mod_lead)}${safe_html(wr_shift)}</span>`;
+
+			let move_html = "";
+			if (sum.orig_best && sum.mod_best) {
+				if (sum.best_changed) {
+					let cost_note = sum.orig_best_new_cost !== null
+						? ` (orig ${safe_html(sum.orig_best)} now −${sum.orig_best_new_cost.toFixed(1)})`
+						: "";
+					move_html = `<span class="mr_wi_best mr_wi_best_changed">Best move: ${safe_html(sum.orig_best)} → ${safe_html(sum.mod_best)}${cost_note}</span>`;
+				} else {
+					move_html = `<span class="mr_wi_best">Best move unchanged: ${safe_html(sum.mod_best)}</span>`;
+				}
+			}
+
+			parts.push(
+				`<div class="mr_wi_row">` +
+				`<span class="mr_wi_tag">WHAT-IF</span>` +
+				`<span class="mr_wi_moves">${safe_html(moved_text)}</span>` +
+				`<span class="mr_wi_verdict ${verdict_cls}">${safe_html(verdict_text)}</span>` +
+				gauge_html +
+				`<span class="mr_wi_back" data-act="return_orig" title="Jump back to the original position">↩ Original</span>` +
+				`</div>` +
+				`<div class="mr_wi_row mr_wi_row_sub">${anchor_html}${move_html}</div>`
+			);
+		} else {
+			let waiting = !sum.has_mod
+				? "Analyzing what-if position…"
+				: (this.what_if_probing.has(orig.id) ? "Measuring original position baseline…" : "Press Space to compare with original");
+			parts.push(
+				`<div class="mr_wi_row">` +
+				`<span class="mr_wi_tag">WHAT-IF</span>` +
+				`<span class="mr_wi_moves">${safe_html(moved_text)}</span>` +
+				`<span class="mr_wi_wait">${safe_html(waiting)}</span>` +
+				`<span class="mr_wi_back" data-act="return_orig" title="Jump back to the original position">↩ Original</span>` +
+				`</div>`
+			);
+		}
+
+		let html = parts.join("");
+		this.what_if_bar.classList.remove("hidden");
+		if (html !== this.what_if_cache) {
+			this.what_if_bar.innerHTML = html;
+			this.bind_row_colours(this.what_if_bar);
+			this.what_if_cache = html;
+		}
+		if (was_hidden && global.hub && hub.node && !hub.node.destroyed) {
+			hub.redraw_if_desired_square_size_mismatch();
+		}
+		return sum;
 	},
 
 	candidate_costs: function(node, limit = null) {
@@ -922,6 +1119,7 @@ let move_report_prototype = {
 		}
 
 		this.apply_layout();
+		this.draw_what_if(node);
 
 		let players_html = this.html_players(node);
 		if (this.content_cache.players !== players_html) {
@@ -1173,6 +1371,9 @@ let move_report_prototype = {
 			let summaries = infos.map(info => continuation_prober.lookup(node, [info.move]));
 			let show_nar = config.continuation_probe || summaries.some(Boolean);
 			let rel_scale = show_nar ? narrowness.relative_narrowness_scale(summaries) : null;
+			let wi_orig = what_if_origin_node(node);
+			let wi_sum = wi_orig ? summarize_what_if(wi_orig, node, this.what_if_baselines.get(wi_orig.id) || null) : null;
+			let wi_orig_best = wi_sum ? wi_sum.orig_best : null;
 
 			// Gradient cap: worst displayed cost, floored at 2 pts so near-equal
 			// options stay near-equal in color (PRODUCT.md rule 6)...
@@ -1224,9 +1425,13 @@ let move_report_prototype = {
 					nar_html = `<td class="mr_nar_gap" title="${tip}"${preview_attr}>${gap_str}</td><td class="mr_nar_width" title="${tip}"${preview_attr}>${width_cell}</td>`;
 				}
 
+				let orig_badge = (wi_orig_best && info.move === wi_orig_best)
+					? ` <span class="mr_orig_best" title="Best move on the original board before moving stones">orig ★</span>`
+					: "";
+
 				parts.push(
 					`<tr class="mr_cand" data-gtp="${info.move}"${val_bind}>` +
-					`<td class="mr_coord mr_val">${info.move}</td>` +
+					`<td class="mr_coord mr_val">${info.move}${orig_badge}</td>` +
 					`<td>${this.fmt_score(info.scoreLead)}</td>` +
 					`<td>${this.fmt_winrate(info.winrate)}</td>` +
 					`<td class="mr_val">${cost_str}</td>` +

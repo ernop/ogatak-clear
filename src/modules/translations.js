@@ -240,7 +240,7 @@ translations[`English`] = {
 	// About box...
 	ABOUT_FILE_LOCATIONS: `Engine, engine config, and network are at:`,
 	ABOUT_GTP_COMMAND: `GTP program and arguments are:`,
-	ABOUT_CONFIG_LOCATION: `Ogatak config file is at:`,
+	ABOUT_CONFIG_LOCATION: `ogatak-clear config file is at:`,
 	ABOUT_RAM_USAGE: `RAM usage (MB) (engine not included):`,
 	ABOUT_THANKS_TRANSLATORS: `Thanks to the translators:`,
 
@@ -464,7 +464,7 @@ translations[`Français`] = {
 
 	ABOUT_FILE_LOCATIONS: `Le moteur, sa configuration et le réseau sont à :`,
 	ABOUT_GTP_COMMAND: `Programme GTP et arguments :`,
-	ABOUT_CONFIG_LOCATION: `Le fichier de configuration Ogatak est à :`,
+	ABOUT_CONFIG_LOCATION: `Le fichier de configuration ogatak-clear est à :`,
 	ABOUT_RAM_USAGE: `Utilisation RAM (Mo) (moteur non inclus) :`,
 	ABOUT_THANKS_TRANSLATORS: `Merci aux traducteurs :`,
 
@@ -683,7 +683,7 @@ translations[`русский`] = {
 	ALERT_CHOICE_CANCEL: `Отмена`,
 
 	ABOUT_FILE_LOCATIONS: `Расположение KataGo, настроек анализа и файла сети:`,
-	ABOUT_CONFIG_LOCATION: `Расположение файла настроек Ogatak:`,
+	ABOUT_CONFIG_LOCATION: `Расположение файла настроек ogatak-clear:`,
 	ABOUT_RAM_USAGE: `Использование оперативной памяти (Мбайт):`,
 	ABOUT_THANKS_TRANSLATORS: `Спасибо переводчикам:`,
 
@@ -904,7 +904,7 @@ translations[`繁體中文`] = {
 
 	ABOUT_FILE_LOCATIONS: `引擎、設定檔和權重位於：`,
 	ABOUT_GTP_COMMAND: `GTP 引擎和參數為：`,
-	ABOUT_CONFIG_LOCATION: `Ogatak 的設定檔檔案位於：`,
+	ABOUT_CONFIG_LOCATION: `ogatak-clear 的設定檔檔案位於：`,
 	ABOUT_RAM_USAGE: `記憶體已使用 (MB) (不包含引擎)：`,
 	ABOUT_THANKS_TRANSLATORS: `感謝下列翻譯者：`,
 
@@ -1125,11 +1125,11 @@ translations[`简体中文`] = {
 
 	ABOUT_FILE_LOCATIONS: `引擎、配置文件和权重位于：`,
 	ABOUT_GTP_COMMAND: `GTP 引擎和参数为：`,
-	ABOUT_CONFIG_LOCATION: `Ogatak 的配置文件位于：`,
+	ABOUT_CONFIG_LOCATION: `ogatak-clear 的配置文件位于：`,
 	ABOUT_RAM_USAGE: `已使用的硬盘空间(MB) (不包括 KataGo)：`,
 	ABOUT_THANKS_TRANSLATORS: `感谢下列翻译者：`,
 
-	BAD_CONFIG_1: `无法解析 Ogatak 配置文件`,
+	BAD_CONFIG_1: `无法解析 ogatak-clear 配置文件`,
 	BAD_CONFIG_2: `此问题解决前，配置文件无法使用`,
 	BAD_CONFIG_3: `并且当前的设定值无法被保存`,
 	BAD_CONFIG_4: `请尝试修复配置文件`,
@@ -1356,7 +1356,7 @@ translations[`한국어`] = {
 	// About box...
 	ABOUT_FILE_LOCATIONS: `엔진, 엔진 설정 및 네트워크 파일 위치:`,
 	ABOUT_GTP_COMMAND: `GTP 프로그램 및 매개변수:`,
-	ABOUT_CONFIG_LOCATION: `Ogatak 설정 파일 위치:`,
+	ABOUT_CONFIG_LOCATION: `ogatak-clear 설정 파일 위치:`,
 	ABOUT_RAM_USAGE: `RAM 사용량 (MB) (엔진 제외):`,
 	ABOUT_THANKS_TRANSLATORS: `번역자에게 감사드립니다:`,
 
@@ -1377,7 +1377,7 @@ translations[`日本語`] = {
 
 	MENU_FILE: `ファイル`,
 
-		MENU_ABOUT: `Ogatak について`,
+		MENU_ABOUT: `ogatak-clear について`,
 		MENU_NEW_BOARD: `新しい碁盤`,
 		MENU_NEW_SMALL_BOARD: `新しい小路盤`,
 		MENU_NEW_RECTANGULAR_BOARD: `新しい長方形の碁盤`,
@@ -1587,7 +1587,7 @@ translations[`日本語`] = {
 	// About box...
 	ABOUT_FILE_LOCATIONS: `エンジン、エンジン設定、ネットワークの場所:`,
 	ABOUT_GTP_COMMAND: `GTP プログラムと引数:`,
-	ABOUT_CONFIG_LOCATION: `Ogatak の設定ファイルの場所:`,
+	ABOUT_CONFIG_LOCATION: `ogatak-clear の設定ファイルの場所:`,
 	ABOUT_RAM_USAGE: `RAM 使用量 (MB)（エンジンは含まず）:`,
 	ABOUT_THANKS_TRANSLATORS: `翻訳者の皆さんに感謝します:`,
 

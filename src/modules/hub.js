@@ -1434,11 +1434,29 @@ let hub_main_props = {
 		if (!this.move_origin || this.move_origin.destroyed) {
 			this.move_origin = origin;
 		}
+		if (moved.node === this.move_origin) {
+			this.move_origin = null;
+		}
 
 		let was_pondering = Boolean(this.engine.desired);
-		this.set_node(moved.node, {bless: true});
-		if (!was_pondering && this.engine.exe && this.engine.received_version) {
-			this.go_by_user();
+		if (moved.in_place) {
+			continuation_prober.on_node_change(moved.node);
+			comment_drawer.draw(moved.node);
+			tree_drawer.must_draw = true;
+			this.draw();
+			move_report.draw(moved.node);
+			if (this.engine.exe && this.engine.received_version) {
+				if (was_pondering) {
+					this.go();
+				} else {
+					this.go_by_user();
+				}
+			}
+		} else {
+			this.set_node(moved.node, {bless: false});
+			if (!was_pondering && this.engine.exe && this.engine.received_version) {
+				this.go_by_user();
+			}
 		}
 		let gtp_from = origin.get_board().gtp(from_s);
 		let gtp_to = origin.get_board().gtp(to_s);

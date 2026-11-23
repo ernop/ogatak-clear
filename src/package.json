@@ -1,12 +1,12 @@
 {
-	"name": "Ogatak",
+	"name": "ogatak-clear",
 	"version": "2.2.1",
-	"author": "Rooklift",
-	"description": "KataGo interface",
+	"author": "Rooklift (upstream Ogatak); ogatak-clear fork",
+	"description": "Clear-perspective KataGo analysis interface",
 	"license": "AGPL-3.0",
 	"main": "prestart.js",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/rooklift/ogatak"
+		"url": "https://github.com/ernop/ogatak-clear"
 	}
 }

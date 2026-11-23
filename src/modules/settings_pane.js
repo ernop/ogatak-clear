@@ -236,11 +236,16 @@ let settings_pane_prototype = {
 
 	show: function() {
 		if (this.visible) {
+			if (global.move_report) {
+				move_report.open_settings_panel();
+			}
 			return;
 		}
 		this.visible = true;
 		this.outer.classList.remove("hidden");
-		move_report.outer.inert = true;					// Covered; keep Tab and clicks out of it.
+		if (global.move_report) {
+			move_report.open_settings_panel();
+		}
 		this.refresh();
 		this.note_timer = setInterval(() => this.refresh_notes(), 1000);
 	},
@@ -254,7 +259,22 @@ let settings_pane_prototype = {
 		}
 		this.visible = false;
 		this.outer.classList.add("hidden");
-		move_report.outer.inert = false;
+		clearInterval(this.note_timer);
+		this.note_timer = null;
+		if (global.move_report) {
+			move_report.close_settings_panel();
+		}
+	},
+
+	on_dock_closed: function() {
+		if (!this.visible) {
+			return;
+		}
+		if (this.outer.contains(document.activeElement)) {
+			document.activeElement.blur();
+		}
+		this.visible = false;
+		this.outer.classList.add("hidden");
 		clearInterval(this.note_timer);
 		this.note_timer = null;
 	},

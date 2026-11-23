@@ -22,6 +22,7 @@ const {translate} = require("./translate");
 const colour_gradients = require("./colour_gradients");
 const eval_history = require("./eval_history");
 const {inherited_root, node_infos, node_best} = require("./explored");
+const {what_if_origin_node, describe_stone_diff} = require("./stone_move");
 
 const {handicap_stones, moveinfo_filter, board_candidates, pad, new_2d_array, xy_to_s, float_to_hex_ff,
 	points_list, is_valid_rgb_or_rgba_colour, colour_curve, clamp, safe_html, info_cost, loss_text, ZERO_LOSS, fmt_visits} = require("./utils");
@@ -313,9 +314,20 @@ let board_drawer_prototype = {
 		if (coordinates === undefined) {
 			throw new Error("desired_square_size(): bad call");
 		}
-		let dy = window.innerHeight - this.canvas.getBoundingClientRect().top;
+		let host = document.getElementById("mr_seccontent_board");
+		let dy;
+		if (host && host.clientWidth > 0 && host.clientHeight > 0) {
+			let info_h = this.infodiv ? this.infodiv.offsetHeight : 0;
+			let wi_el = document.getElementById("mr_what_if");
+			let wi_h = (wi_el && !wi_el.classList.contains("hidden")) ? wi_el.offsetHeight : 0;
+			let avail_w = host.clientWidth - 16;
+			let avail_h = host.clientHeight - info_h - wi_h - 14;
+			dy = Math.max(100, Math.min(avail_w, avail_h));
+		} else {
+			dy = window.innerHeight - this.canvas.getBoundingClientRect().top;
+		}
 		let adjust = coordinates ? 1 : 0;
-		let border = coordinates ? 0 : 10;
+		let border = coordinates ? 0 : 6;
 		let lines = config.embiggen_small_boards
 			? Math.max(width + adjust, height + adjust)
 			: Math.max(width + adjust, height + adjust, 19 + adjust);
@@ -621,11 +633,115 @@ let board_drawer_prototype = {
 		this.plan_next_markers(node);					// Should be last, since it can adjust other planned objects.
 		this.plan_stone_move_markers(node);
 
+		this.draw_what_if_overlay(node);
 		this.draw_canvas();
 		this.draw_node_info(node);
 		this.pv = null;
 
 		this.draw_count++;
+	},
+
+	// When viewing a stone-move what-if sibling, show a subtle dashed ghost ring
+	// at each moved stone's original intersection, a gold arrow from origin to
+	// destination, and a crisp gold ring around each moved stone. Drawn before
+	// candidate circles so analysis text stays completely unobstructed.
+
+	draw_what_if_overlay: function(node) {
+		if (!node || (hub.moving_stone && hub.moving_stone.node === node)) {
+			return;
+		}
+		let orig = what_if_origin_node(node);
+		if (!orig) {
+			return;
+		}
+		let {pairs} = describe_stone_diff(orig, node);
+		if (!pairs || pairs.length === 0) {
+			return;
+		}
+
+		let ctx = this.ctx;
+		let ss = this.square_size;
+		let x_off = this.coordinates ? 1 : 0;
+
+		ctx.save();
+		for (let p of pairs) {
+			let fx = (p.from.charCodeAt(0) - 97 + x_off + 0.5) * ss;
+			let fy = (p.from.charCodeAt(1) - 97 + 0.5) * ss;
+			let tx = (p.to.charCodeAt(0) - 97 + x_off + 0.5) * ss;
+			let ty = (p.to.charCodeAt(1) - 97 + 0.5) * ss;
+
+			// Dashed ghost stone at original intersection.
+			ctx.save();
+			ctx.beginPath();
+			ctx.arc(fx, fy, ss * 0.40, 0, 2 * Math.PI);
+			ctx.fillStyle = p.colour === "b" ? "rgba(0, 0, 0, 0.30)" : "rgba(255, 255, 255, 0.42)";
+			ctx.fill();
+			ctx.setLineDash([Math.max(3, ss * 0.14), Math.max(2, ss * 0.10)]);
+			ctx.lineWidth = Math.max(2.0, ss * 0.075);
+			ctx.strokeStyle = "#ffd166ff";
+			ctx.stroke();
+			ctx.restore();
+
+			// Crisp gold halo around relocated stone.
+			ctx.save();
+			ctx.beginPath();
+			ctx.arc(tx, ty, ss * 0.47, 0, 2 * Math.PI);
+			ctx.lineWidth = Math.max(2.0, ss * 0.075);
+			ctx.strokeStyle = "#ffd166ff";
+			ctx.stroke();
+			ctx.restore();
+
+			// Vector arrow from original square toward relocated stone.
+			// Works cleanly even for adjacent 1-intersection shifts (e.g. D4 -> C4).
+			let dx = tx - fx;
+			let dy = ty - fy;
+			let dist = Math.hypot(dx, dy);
+			if (dist > ss * 0.5) {
+				let ux = dx / dist;
+				let uy = dy / dist;
+				let adjacent = dist < ss * 1.6;
+				let sx = fx + ux * ss * (adjacent ? 0.12 : 0.42);
+				let sy = fy + uy * ss * (adjacent ? 0.12 : 0.42);
+				let ex = tx - ux * ss * (adjacent ? 0.42 : 0.48);
+				let ey = ty - uy * ss * (adjacent ? 0.42 : 0.48);
+				let head = Math.max(7, ss * 0.28);
+				let ang = Math.atan2(uy, ux);
+
+				ctx.save();
+				ctx.lineCap = "round";
+				ctx.lineJoin = "round";
+
+				// Dark halo so the arrow reads cleanly over wood and white stones.
+				ctx.beginPath();
+				ctx.moveTo(sx, sy);
+				ctx.lineTo(ex, ey);
+				ctx.lineWidth = Math.max(3.6, ss * 0.12);
+				ctx.strokeStyle = "rgba(0, 0, 0, 0.72)";
+				ctx.stroke();
+
+				// Bright gold shaft.
+				ctx.beginPath();
+				ctx.moveTo(sx, sy);
+				ctx.lineTo(ex, ey);
+				ctx.lineWidth = Math.max(2.0, ss * 0.065);
+				ctx.strokeStyle = "#ffd166ff";
+				ctx.stroke();
+
+				// Bright gold arrowhead.
+				ctx.beginPath();
+				ctx.moveTo(ex, ey);
+				ctx.lineTo(ex - head * Math.cos(ang - 0.54), ey - head * Math.sin(ang - 0.54));
+				ctx.lineTo(ex - head * Math.cos(ang + 0.54), ey - head * Math.sin(ang + 0.54));
+				ctx.closePath();
+				ctx.fillStyle = "#ffd166ff";
+				ctx.fill();
+				ctx.lineWidth = 1.2;
+				ctx.strokeStyle = "rgba(0, 0, 0, 0.80)";
+				ctx.stroke();
+				ctx.restore();
+			}
+		}
+		ctx.restore();
 	},
 
 	draw_pv: function(node, point, any_move = false) {	// Returns true / false indicating whether this happened.

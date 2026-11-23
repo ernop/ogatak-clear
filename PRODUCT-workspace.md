@@ -160,43 +160,59 @@ The strip above the board is not a fixed 12-span table. It is:
 
 ## Panes and Dockview workspace (settled 2026-11-22)
 
-All non-board panels (`history`, `options`, `corridor`, `tree`, `status`,
+The entire app — the **Go board** (`board`), **Settings** (`settings`), and
+every analysis panel (`history`, `options`, `corridor`, `tree`, `status`,
 `quality`, `comments`, `lastmove`, `outcome`, `breadth`, `distribution`,
-`turn`) live in a **`dockview-core` v8.9.1** workspace (`src/vendor/dockview/`,
-MIT license, vendored locally with zero build step and zero native
-dependencies — works identically on Linux, macOS, and Windows).
+`turn`) — lives in one unified **`dockview-core` v8.9.1** workspace
+(`src/vendor/dockview/`, MIT license, vendored locally with zero build step
+and zero native dependencies — works identically on Linux, macOS, and
+Windows).
 
-- **Zero outer scrollbars; full two-axis resize.** The workspace fills the
-  right-hand viewport (`#mr_dockview`, `flex: 1 1 0; min-height: 0;`).
-  Dragging any Dockview splitter resizes adjacent panels smoothly in both X
-  and Y; all canvas charts and `#treecanvas` observe both width and height
-  via `ResizeObserver` and redraw to fill their panel box.
+- **Zero outer scrollbars; full two-axis resize (including the Go board).**
+  The workspace fills the full viewport beside the optional tab strip
+  (`#mr_dockview`, `flex: 1 1 0; min-height: 0;`). Dragging any Dockview
+  splitter resizes the Go board and adjacent analysis panels smoothly in
+  both X and Y; the board recomputes its device-pixel-aligned square size
+  from its panel box (`#mr_seccontent_board`), and all canvas charts and
+  `#treecanvas` observe both width and height via `ResizeObserver`.
 - **Persistent DOM pool.** Closing a panel or switching presets parks its
-  DOM element in `#mr_panel_pool` rather than destroying `#treecanvas`,
-  `#comments`, or chart canvases.
-- **Dock, tab, split, float, maximize.** Tabs can be dragged to reorder,
-  stacked into tab groups, split horizontally/vertically, popped out into
-  floating groups, or maximized via the tab right-click context menu.
-- **Built-in presets** in `#mr_controls`:
-  - **Review** (default): Top: `[Eval History*, Move Quality]`; Bottom-Left:
-    `[Next Move Options*, Variation Space]`; Bottom-Right: `[Variation Tree*,
-    Game Status, Comments]`.
-  - **Explore**: 2×2 grid keeping Eval History, Variation Space, Next Move
-    Options, and Variation Tree visible simultaneously.
-  - **Minimal**: Top `[Next Move Options*, Variation Space]` over Bottom
-    `[Variation Tree*, Game Status, Comments]`.
-- **Persistence.** Every layout drag, split, tab switch, or panel open/close
-  persists debounced JSON into `config.workspace_layout` (and mirrors open
-  panel IDs in `config.move_report_sections` for Settings toggles). Invalid
-  or empty saved layouts fall back cleanly to the `Review` preset.
+  DOM element in `#mr_panel_pool` rather than destroying `#boardtable`,
+  `#treecanvas`, `#comments`, `#settings`, or chart canvases.
+- **Dock, tab, split, float, maximize.** Tabs — including the Go board and
+  Settings — can be dragged to reorder, stacked into tab groups, split
+  horizontally/vertically, popped out into floating groups, or maximized
+  via the tab right-click context menu.
+- **Built-in presets** in `#mr_controls` (all include the Go board on the
+  left sized to fit a crisp square without empty side margins, with
+  analysis panels filling the right):
+  - **Review** (default): Left `Board`; Right-Top `[Eval History*, Move
+    Quality]`; Right-Bottom-Left `[Next Move Options*, Variation Space]`;
+    Right-Bottom-Right `[Variation Tree*, Game Status, Comments]`.
+  - **Explore**: Left `Board`; Right 2×2 grid keeping Eval History,
+    Variation Space, Next Move Options, and Variation Tree visible
+    simultaneously.
+  - **Minimal**: Larger `Board` on the left; Right-Top `[Next Move Options*,
+    Variation Space]` over Right-Bottom `[Variation Tree*, Game Status,
+    Comments]`.
+- **Persistence & versioned migration.** Every layout drag, split, tab
+  switch, or panel open/close persists debounced JSON into
+  `config.workspace_layout` (`ogatak_version: 2`, automatically upgrading
+  older layouts without a `board` panel to the unified `Review` preset) and
+  mirrors open non-settings panel IDs in `config.move_report_sections`.
 - **Variation tree visible by default.** `tree` is docked open in all three
-  presets, and Ctrl+click stone-move setup branches draw with a gold node
-  outline (`#e0b872ff`).
+  presets, and stone-move what-if siblings draw with a gold outline
+  (`#e0b872ff`).
+- **App identity & config migration (`ogatak-clear`).** The Electron app
+  name is `ogatak-clear` (`src/package.json`), storing settings under
+  `<userData>/ogatak-clear/config.json`. On first launch, if no
+  `ogatak-clear/config.json` exists yet and a legacy `Ogatak/config.json`
+  is present, `config_io.js` copies the legacy file non-destructively so
+  existing KataGo paths, weights, and preferences carry over seamlessly.
 
-## Settings pane (2026-09-26)
+## Settings pane (2026-09-26, docked 2026-11-22)
 
 Every setting has one place where it can be seen and changed:
-**Settings**, a pane with all of them on one scrollable page.
+**Settings**, a Dockview panel with all of them on one searchable page.
 
 ### Why
 
@@ -214,9 +230,11 @@ Stock Ogatak keeps its settings in the native menus and in hand-edited
 ### Behaviour
 
 - **Opening and closing.** Opened by File → Settings... (Ctrl+,) or
-  the **⚙ settings** control at the left of the Move Report's
-  controls bar. Closed by its close ✕, Esc, or Ctrl+, again.
-- **Placement.** It covers the Move Report in the right-hand column.
+  the **⚙ settings** control at the left of the workspace controls bar.
+  Closed by its close ✕, the Dockview tab ✕, Esc, or Ctrl+, again.
+- **Placement.** Docks into a non-board Dockview group beside the Go board
+  (never covering the board), and can be dragged, split, resized, or
+  floated like any other panel so every change can be judged live.
   The board, info bar, and tab strip stay visible and live, so the
   effect of a change can be judged at once. Analysis keeps running
   while it is open. (A separate window was rejected: the renderer
