@@ -692,9 +692,60 @@ startup, so the stock comment drawer and input handlers are untouched.
   it only stops a move's first noisy visits from claiming one of the N
   places, and never hides the best or the played move.
 
-The **variation tree** is not removed. It is a hideable pane (section id
-`tree`), default hidden, restored from the Move Report chip list. See
-`PRODUCT-workspace.md`.
+The **variation tree** is visible by default inside the Dockview workspace
+(section id `tree`). See `PRODUCT-workspace.md`.
+
+## Settled features (2026-11-22)
+
+1. **Candidate outlines show whose turn it is; interior shows value.**
+   When Black is to play, candidate move circles (and explored rounded
+   squares) draw a black outline (`#000000ff` on the best move, `#000000d8`
+   on other candidates) and the best-move blue star (`★`) has a crisp black
+   stroke. When White is to play, the star and candidate outlines are white
+   (`#ffffffff` / `#ffffffee`). The interior fill stays the candidate value
+   gradient (or blue star). Next-move variation rings sit slightly inset so
+   both player-turn outline and variation mark remain distinguishable.
+
+2. **Ctrl+click stone moving (`src/modules/stone_move.js`).**
+   Holding Ctrl (or Cmd on macOS) and clicking any stone on the board picks
+   it up (highlighted with a gold origin ring; Esc or clicking the origin
+   cancels). Clicking any empty intersection moves the stone there in the
+   cleanest SGF FF[4] form without altering the original sequence:
+   - Moving the exact stone played on the current node (when legal from
+     `node.parent`) creates or reuses a sibling move variation off
+     `node.parent`.
+   - Moving any earlier stone or setup stone creates or reuses a child
+     setup branch off `node` carrying `AE[from]`, `AB[to]`/`AW[to]`,
+     `PL[active]`, and a note comment (`C[Moved <Color> <from> -> <to>]`).
+     Setup stone-move branches draw with a gold border in the Variation Tree.
+   - Moving a stone automatically starts KataGo analysis on the new position
+     if paused, and shows a **`↩ Return to #N`** button in the workspace bar
+     that jumps straight back to the original node in one click.
+
+3. **Scale-free continuation narrowness & Variation Space (`corridor`).**
+   Instead of arbitrary fixed point cutoffs, continuation narrowness is
+   measured in natural units (`src/modules/narrowness.js`):
+   - `gap₂` (points): points the opponent loses if they play their 2nd-best
+     reply instead of their best reply (higher = more forcing / narrower).
+   - `N_eff` (Hill number `^1D = exp(H)` over reply MCTS visit shares):
+     effective number of replies (`1.0` = single forced reply; larger = broad).
+     Visual narrowness bars normalize continuously across the current
+     position's own candidates (`relative_narrowness_scale`), with no
+     arbitrary fixed threshold.
+   - `π loss` (points): policy-weighted expected point loss across the
+     opponent's candidate replies, separating obvious forcing replies from
+     sharp/tricky positions where the highest-prior move loses points.
+   - `continuation_prober.js` reads already-analyzed child nodes from the
+     game tree first (zero GPU work) and then runs sequential low-priority
+     (`priority: -10`) KataGo continuation probes for the candidate set
+     (`options_table_infos`: natural candidates union played/variation moves),
+     controlled by `continuation_probe` and `continuation_probe_visits`.
+   - `Next Move Options` displays compact `opp gap` and `opp width` columns
+     on each single-line row. The `Variation Space` (`corridor`) panel shows
+     root metrics, `opp gap₂`, `opp N_eff`, `opp π loss`, interactive
+     continuation sequences (hover to preview numbered stones on the board,
+     click to play into the variation tree), per-candidate 5-ply corridor
+     tracing (`trace`), and `probe deeper`.
 
 ## Data notes (for implementers)
 

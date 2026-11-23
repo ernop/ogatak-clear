@@ -51,6 +51,7 @@ class Engine {
 		this.desired = null;				// The search object we want to be running.
 		this.running = null;				// The search object actually running. (Possibly the same object as above.)
 		this.analysis_contexts = new Map();	// Query id --> search context, retained until that query's final response.
+		this.probe_callbacks = new Map();	// Background probe query id --> {on_result, query}.
 	}
 
 	__send(o) {
@@ -131,6 +132,34 @@ class Engine {
 				terminateId: `${this.running.id}`
 			});
 		}
+	}
+
+	probe(query, on_result) {
+
+		// Sends a polite background continuation probe (id starts with "probe:").
+		// Runs independently of the interactive search and never replaces this.running.
+
+		if (!this.exe || this.has_quit || !this.received_version) {
+			return null;
+		}
+
+		this.probe_callbacks.set(query.id, {on_result, query});
+		this.__send(query);
+		return query.id;
+	}
+
+	cancel_probes() {
+		if (this.probe_callbacks.size === 0) {
+			return;
+		}
+		for (let id of this.probe_callbacks.keys()) {
+			this.__send({
+				id: `stop!${id}`,
+				action: "terminate",
+				terminateId: id,
+			});
+		}
+		this.probe_callbacks.clear();
 	}
 
 	setup(filepath, engineconfig, weights) {
@@ -222,6 +251,20 @@ class Engine {
 						"This build of KataGo appears to be compiled with support for board sizes above 19. " +
 						"This build will be significantly slower. Consider installing the normal version."
 					);
+				}
+				return;
+			}
+			// Background continuation probe responses stay isolated from the main search loop.
+			if (typeof o.id === "string" && (o.id.startsWith("probe:") || o.id.startsWith("stop!probe:"))) {
+				if (o.action === "terminate") {
+					return;
+				}
+				let cb = this.probe_callbacks.get(o.id);
+				if (!o.isDuringSearch || o.error || o.noResults) {
+					this.probe_callbacks.delete(o.id);
+					if (cb && typeof cb.on_result === "function") {
+						cb.on_result(o.error || o.noResults ? null : o);
+					}
 				}
 				return;
 			}
@@ -365,6 +408,7 @@ class Engine {
 		this.running = null;
 		this.desired = null;
 		this.analysis_contexts.clear();
+		this.probe_callbacks.clear();
 	}
 }
 

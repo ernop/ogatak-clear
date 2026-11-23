@@ -101,10 +101,12 @@ exports.defaults = {
 	"info_bar_items": ["rules", "komi", "caps", "show"],
 	"tree_pane_height": 280,					// Variation-tree card height while the tree is a Move Report section.
 
-	"move_report_width": 640,					// These settings are adjusted live from the Move Report panel's
-	"move_report_chart_height": 150,			// own controls (see move_report.js / PRODUCT.md), but can
-												// also be edited here. Panel text size is info_font_size (above).
-	"move_report_sections": ["quality", "breadth", "status", "distribution", "turn", "lastmove", "outcome", "options", "history", "comments"],
+	"move_report_width": 640,					// Legacy card-flow settings kept for config compatibility;
+	"move_report_chart_height": 150,			// panels now size directly inside the Dockview workspace.
+	"move_report_sections": ["history", "quality", "options", "corridor", "tree", "status", "comments"],
+	"workspace_layout": null,					// Dockview JSON layout persisted on drag/resize/tab changes.
+	"continuation_probe": true,					// Background shallow probes for wide/narrow continuation metrics.
+	"continuation_probe_visits": 120,			// Visits per probed candidate continuation.
 	"move_report_breadth_view": "focus_tail",	// Paired historical/current candidate-value visualization.
 	"move_report_distribution_top_n": 0,			// 0 = all reported candidates; otherwise use the engine-ranked top N.
 	"move_report_quality_yscale": "linear",		// "linear" or "log2", toggled from the quality chart's header.
@@ -411,6 +413,15 @@ function apply_fixes() {
 	}
 	if (typeof config.tree_pane_height !== "number" || !Number.isFinite(config.tree_pane_height) || config.tree_pane_height < 80) {
 		config.tree_pane_height = exports.defaults.tree_pane_height;
+	}
+	if (config.workspace_layout !== null && (typeof config.workspace_layout !== "object" || Array.isArray(config.workspace_layout))) {
+		config.workspace_layout = null;
+	}
+	if (typeof config.continuation_probe !== "boolean") {
+		config.continuation_probe = exports.defaults.continuation_probe;
+	}
+	if (!Number.isInteger(config.continuation_probe_visits) || config.continuation_probe_visits < 20 || config.continuation_probe_visits > 5000) {
+		config.continuation_probe_visits = exports.defaults.continuation_probe_visits;
 	}
 	if (config.window_x !== null && typeof config.window_x !== "number") {
 		config.window_x = null;

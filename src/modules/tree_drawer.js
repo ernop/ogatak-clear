@@ -11,6 +11,8 @@
 // is the condition upon which I want panes to auto-close, I guess it makes some sense to do it here in the
 // tree_drawer code, which is (hopefully) always called on a tree change.
 
+const {is_setup_stone_move} = require("./stone_move");
+
 function init() {
 
 	return Object.assign(Object.create(tree_drawer_prototype), {
@@ -187,7 +189,9 @@ let tree_drawer_prototype = {
 					ctx.fill();
 				}
 
-				ctx.strokeStyle = node.draw_as_blessed_line ? config.tree_main_colour : config.tree_off_colour;
+				ctx.strokeStyle = is_setup_stone_move(node)
+					? "#e0b872ff"
+					: (node.draw_as_blessed_line ? config.tree_main_colour : config.tree_off_colour);
 				ctx.lineWidth = 2;
 				ctx.stroke();
 

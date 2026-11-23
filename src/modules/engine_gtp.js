@@ -262,6 +262,13 @@ class GTPengine {
 		}
 	}
 
+	probe() {
+		return null;
+	}
+
+	cancel_probes() {
+	}
+
 	setup_with_command(command, argslist) {
 
 		if (this.exe || this.has_quit) {

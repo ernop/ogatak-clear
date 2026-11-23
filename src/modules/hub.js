@@ -17,6 +17,8 @@ const new_load_results = require("./loader_results");
 const make_perf_report = require("./performance");
 const root_fixes = require("./root_fixes");
 const eval_history = require("./eval_history");
+const continuation_prober = require("./continuation_prober");
+const {move_stone_on_tree} = require("./stone_move");
 const {save_sgf, save_sgf_multi, tree_string} = require("./save_sgf");
 const {fast_maxvisits, new_query} = require("./query");
 
@@ -56,6 +58,9 @@ function init() {
 		mouseover_time: 0,
 		pending_mouseover_fn_id: null,
 		chart_point: null,			// {node, s}: a move the Move Report's eval history follows, shown on the board as if hovered.
+		preview_seq: null,			// {node, seq}: a GTP sequence previewed from Variation Space.
+		moving_stone: null,			// {node, from, colour}: stone currently picked up via Ctrl+click.
+		move_origin: null,			// Original Node saved before moving stones, for one-click return.
 
 	});
 }
@@ -73,6 +78,8 @@ let hub_main_props = {
 			if (config.mouseover_delay <= 0 || performance.now() - this.mouseover_time >= config.mouseover_delay * 1000) {
 				did_draw_pv = board_drawer.draw_pv(this.node, s);
 			}
+		} else if (this.preview_seq && this.preview_seq.node === this.node) {
+			did_draw_pv = board_drawer.draw_sequence_preview(this.node, this.preview_seq.seq);
 		} else if (this.chart_point && this.chart_point.node === this.node) {
 			did_draw_pv = board_drawer.draw_pv(this.node, this.chart_point.s, true);
 		}
@@ -391,6 +398,12 @@ let hub_main_props = {
 		}
 
 		config.avoid_set = {};
+		this.moving_stone = null;
+		this.preview_seq = null;
+		if (this.move_origin && (this.move_origin.destroyed || this.move_origin === node)) {
+			this.move_origin = null;
+		}
+		continuation_prober.on_node_change(node);
 
 		// Of course, note that the early return means no graph draw or tree draw will be scheduled if it happens.
 
@@ -1285,6 +1298,30 @@ let hub_main_props = {
 	click: function(s, event) {
 		if (!config.editing) {
 			let board = this.node.get_board();
+			let mod = Boolean(event.ctrlKey || event.metaKey);
+
+			if (this.moving_stone && this.moving_stone.node === this.node) {
+				if (event.button === 2 || s === this.moving_stone.from) {
+					this.cancel_move_stone();
+					return;
+				}
+				if (mod && (board.state_at(s) === "b" || board.state_at(s) === "w")) {
+					this.start_move_stone(s);
+					return;
+				}
+				if (!board.state_at(s)) {
+					this.complete_move_stone(s);
+					return;
+				}
+				this.cancel_move_stone();
+				return;
+			}
+
+			if (mod && event.button === 0 && (board.state_at(s) === "b" || board.state_at(s) === "w")) {
+				this.start_move_stone(s);
+				return;
+			}
+
 			if (!board.state_at(s) && (board.get_ko() !== s)) {
 				if (event.button === 2) {
 					if (!config.avoid_set[s]) {
@@ -1334,6 +1371,104 @@ let hub_main_props = {
 		}
 	},
 
+	start_move_stone: function(s) {
+		let board = this.node.get_board();
+		let colour = board.state_at(s);
+		if (colour !== "b" && colour !== "w") {
+			return;
+		}
+		this.moving_stone = {node: this.node, from: s, colour};
+		board_drawer.draw_standard(this.node);
+	},
+
+	cancel_move_stone: function() {
+		if (!this.moving_stone) {
+			return false;
+		}
+		this.moving_stone = null;
+		this.draw();
+		return true;
+	},
+
+	complete_move_stone: function(to_s) {
+		if (!this.moving_stone || this.moving_stone.node !== this.node) {
+			return;
+		}
+		let origin = this.node;
+		let from_s = this.moving_stone.from;
+		this.moving_stone = null;
+
+		let moved = move_stone_on_tree(origin, from_s, to_s, new_node);
+		if (!moved) {
+			this.draw();
+			return;
+		}
+
+		// Remember the first original position before any stone moves, so chained
+		// what-if moves still return straight to the original game sequence.
+		if (!this.move_origin || this.move_origin.destroyed) {
+			this.move_origin = origin;
+		}
+
+		let was_pondering = Boolean(this.engine.desired);
+		this.set_node(moved.node, {bless: true});
+		if (!was_pondering && this.engine.exe && this.engine.received_version) {
+			this.go_by_user();
+		}
+		let gtp_from = origin.get_board().gtp(from_s);
+		let gtp_to = origin.get_board().gtp(to_s);
+		toast(`Moved ${moved.colour === "b" ? "Black" : "White"} ${gtp_from} -> ${gtp_to}`);
+	},
+
+	return_to_move_origin: function() {
+		if (!this.move_origin || this.move_origin.destroyed) {
+			this.move_origin = null;
+			move_report.draw(this.node);
+			return;
+		}
+		let target = this.move_origin;
+		this.move_origin = null;
+		this.set_node(target, {bless: true});
+	},
+
+	play_gtp_sequence: function(seq) {
+		if (!Array.isArray(seq) || seq.length === 0 || !this.node || this.node.destroyed) {
+			return;
+		}
+		let cur = this.node;
+		for (let gtp of seq) {
+			let board = cur.get_board();
+			if (String(gtp).toLowerCase() === "pass") {
+				cur = cur.pass();
+			} else {
+				let s = board.parse_gtp_move(gtp);
+				if (!s) break;
+				let next = cur.try_move(s);
+				if (next === cur) break;
+				cur = next;
+			}
+		}
+		if (cur !== this.node) {
+			this.set_node(cur, {bless: true});
+		}
+	},
+
+	show_sequence_preview: function(seq) {
+		let old = this.preview_seq;
+		let same = old && old.node === this.node && Array.isArray(seq) &&
+			old.seq.length === seq.length && old.seq.every((m, i) => m === seq[i]);
+		if (!seq && !old) {
+			return;
+		}
+		if (same) {
+			return;
+		}
+		this.preview_seq = Array.isArray(seq) && seq.length > 0 ? {node: this.node, seq: seq.slice()} : null;
+		if (!this.mouse_point()) {
+			this.draw();
+		}
+	},
+
 	mouse_point: function() {
 		let overlist = document.querySelectorAll(":hover");
 		for (let item of overlist) {
@@ -1364,6 +1499,11 @@ let hub_main_props = {
 
 		this.mouseover_time = performance.now();
 		move_report.hover_board_point(s);
+
+		if (this.moving_stone && this.moving_stone.node === this.node) {
+			board_drawer.draw_standard(this.node);
+			return;
+		}
 
 		if (!s && this.chart_point) {										// Off the board, back to what the eval history follows.
 			if (this.pending_mouseover_fn_id) {

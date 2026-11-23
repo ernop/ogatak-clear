@@ -76,17 +76,18 @@ const INFO_BAR_ITEMS = [
 ];
 
 const SECTIONS = [
-	["quality", "Move quality"],
-	["breadth", "Choice breadth history"],
+	["history", "Eval history"],
+	["options", "Next move options"],
+	["corridor", "Variation space"],
+	["tree", "Variation tree"],
 	["status", "Game status"],
-	["distribution", "Current candidate values"],
-	["turn", "Turn"],
+	["quality", "Move quality"],
+	["comments", "Comments"],
 	["lastmove", "Last move"],
 	["outcome", "Outcome"],
-	["options", "Next move options"],
-	["history", "Eval history"],
-	["comments", "Comments"],
-	["tree", "Variation tree"],
+	["breadth", "Choice breadth history"],
+	["distribution", "Current candidate values"],
+	["turn", "Turn"],
 ];
 
 const CHARSETS = ["utf-8", "shift_jis", "euc-jp", "euc-kr", "gbk", "big5", "latin1", "windows-1251", "koi8-r"];
@@ -142,6 +143,10 @@ exports.groups = [
 			{type: "toggle", key: "ownership_per_move", label: "Per-move ownership (costly)"},
 			{type: "number", key: "analysis_pv_len", label: "Variation length shown (max)", unit: "moves", integer: true, min: 1, max: 32,
 				presets: [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30], find: "pv principal"},
+			{type: "toggle", key: "continuation_probe", label: "Probe continuations (wide / narrow)",
+				find: "narrowness forcing corridor lookahead reply"},
+			{type: "number", key: "continuation_probe_visits", label: "Continuation probe visits", unit: "visits", format: "count", integer: true,
+				min: 20, max: 5000, presets: [40, 80, 120, 250, 500, 1000], find: "narrowness forcing corridor lookahead"},
 		],
 	},
 	{
@@ -226,9 +231,6 @@ exports.groups = [
 		id: "move_report",
 		title: "Move Report",
 		rows: [
-			// Width and chart height use the same limits as the panel's own −/+ controls (LIMITS in move_report.js).
-			{type: "number", key: "move_report_width", label: "Card width", unit: "px", integer: true, min: 320, max: 1280, step: 40},
-			{type: "number", key: "move_report_chart_height", label: "Chart height", unit: "px", integer: true, min: 90, max: 4000, step: 20},
 			{type: "select", key: "move_report_breadth_view", label: "Breadth view", options_from: "mr_breadth_view"},
 			{type: "number", key: "move_report_distribution_top_n", label: "Candidate values: top N", integer: true, min: 0, max: 1000,
 				zero_label: "all", presets: [0, 5, 10, 20, 50, 100], find: "distribution"},
@@ -245,7 +247,7 @@ exports.groups = [
 	},
 	{
 		id: "move_report_cards",
-		title: "Move Report cards shown",
+		title: "Workspace panels",
 		rows: SECTIONS.map(([sec, label]) => section_row(sec, label)),
 	},
 	{

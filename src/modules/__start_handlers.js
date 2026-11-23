@@ -287,6 +287,12 @@ window.addEventListener("keydown", (event) => {
 	// In each of these cases, the preventDefault() is there to prevent the unintended scrolling, but has the unwanted
 	// side-effect of also stopping the menu accelerators from working. So we have to take the right action.
 
+	if (event.code === "Escape" && hub.moving_stone) {
+		event.preventDefault();
+		hub.cancel_move_stone();
+		return;
+	}
+
 	let command_modifier = event.ctrlKey || event.metaKey;
 
 	if (command_modifier && !event.altKey && (event.code === "Equal" || event.code === "NumpadAdd")) {

@@ -344,9 +344,20 @@ module.exports = {
 			this.draw();
 			break;
 
-		case "move_report_width":					// The panel's own controls write these directly;
-		case "move_report_chart_height":			// this is the path for everything else (Settings).
 		case "move_report_sections":
+
+			move_report.sync_sections_from_config();
+			move_report.draw(this.node);
+			break;
+
+		case "continuation_probe":
+		case "continuation_probe_visits":
+
+			move_report.draw(this.node);
+			break;
+
+		case "move_report_width":					// Legacy keys kept for config compatibility.
+		case "move_report_chart_height":
 		case "move_report_breadth_view":
 		case "move_report_distribution_top_n":
 		case "move_report_quality_yscale":

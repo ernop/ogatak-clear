@@ -37,30 +37,33 @@ const candidate_profile = require("./candidate_profile");
 const eval_history = require("./eval_history");
 const explored = require("./explored");
 const type_scale = require("./type_scale");
+const workspace = require("./workspace");
+const narrowness = require("./narrowness");
+const continuation_prober = require("./continuation_prober");
 const {info_cost, loss_text, ZERO_LOSS, safe_html, board_candidates, options_table_infos, fmt_visits} = require("./utils");
 
 const SECTION_TITLES = {
-	quality:  "MOVE QUALITY",
-	breadth:  "CHOICE BREADTH HISTORY",
-	status:   "GAME STATUS",
+	history:      "EVAL HISTORY",
+	options:      "NEXT MOVE OPTIONS",
+	corridor:     "VARIATION SPACE",
+	tree:         "VARIATION TREE",
+	status:       "GAME STATUS",
+	quality:      "MOVE QUALITY",
+	comments:     "COMMENTS",
+	lastmove:     "LAST MOVE",
+	outcome:      "OUTCOME",
+	breadth:      "CHOICE BREADTH HISTORY",
 	distribution: "CURRENT CANDIDATE VALUES",
-	turn:     "TURN",
-	lastmove: "LAST MOVE",
-	outcome:  "OUTCOME",
-	options:  "NEXT MOVE OPTIONS",
-	history:  "EVAL HISTORY",
-	comments: "COMMENTS",
-	tree:     "VARIATION TREE",
+	turn:         "TURN",
 };
 
-const ALL_SECTIONS = Object.keys(SECTION_TITLES);
+const ALL_SECTIONS = workspace.PANEL_IDS;
 const CHART_SECTIONS = ["quality", "breadth", "status", "distribution"];
 const YSCALE_SECTIONS = ["quality", "status"];
-const HTML_SECTIONS = ["turn", "lastmove", "outcome", "options"];		// Rendered via html_* methods; "comments" hosts the stock textarea instead.
+const HTML_SECTIONS = ["turn", "lastmove", "outcome", "options", "corridor"];
 
 const HISTORY_START_VISITS = eval_history.START_VISITS;
 const HISTORY_LINES = 24;				// Most lines drawn (the followed move and the game's next move are always added).
-const HISTORY_CHART_HEIGHT = 1.4;		// Multiple of the shared chart height; this chart carries the most lines.
 
 const VERDICTS = [
 	// [max points lost (exclusive), label, css class (colours live in ogatak.css)]
@@ -74,8 +77,6 @@ const VERDICTS = [
 // Candidate colours come from colour_gradients.js (Display → Gradient).
 
 const LIMITS = {
-	move_report_width:        {min: 320, max: 1280, step: 40},
-	move_report_chart_height: {min: 90,  max: 4000, step: 20, proportional: true},		// −/+ move about 10%, in whole steps.
 	move_report_distribution_top_n: {min: 0, max: 1000, step: 1},
 	move_report_quality_window_n: {min: 1, max: 1000, step: 1},
 	move_report_status_window_n: {min: 1, max: 1000, step: 1},
@@ -210,61 +211,56 @@ function init() {
 
 	let outer = document.getElementById("movereport");
 
-	// Build the skeleton: a controls bar, then one box per section. Sections are
-	// reordered via flexbox "order", so the DOM (and the canvases) stays stable...
-
 	let parts = [];
 
 	parts.push(`<div id="mr_game_identity"></div>`);
 	parts.push(`<div id="mr_controls">`);
 	parts.push(`<span class="mr_settings_ctl" title="Every setting in one place (Ctrl+,)">⚙ settings</span>`);
-	parts.push(`<span class="mr_ctlgroup">width <span class="mr_ctl" data-act="width_down">–</span><span class="mr_ctl" data-act="width_up">+</span></span>`);
-	parts.push(`<span class="mr_ctlgroup">chart <span class="mr_ctl" data-act="chart_down">–</span><span class="mr_ctl" data-act="chart_up">+</span></span>`);
-	parts.push(`<label class="mr_metric" id="mr_breadth_ctl">breadth <select id="mr_breadth_view">`);
+	parts.push(`<span class="mr_presets" title="Switch workspace layout preset">`);
+	for (let [key, label] of Object.entries(workspace.PRESETS)) {
+		parts.push(`<span class="mr_preset" data-preset="${key}">${label}</span>`);
+	}
+	parts.push(`</span>`);
+	parts.push(`<label class="mr_metric hidden" id="mr_breadth_ctl">breadth <select id="mr_breadth_view">`);
 	for (let [value, label] of Object.entries(BREADTH_VIEW_LABELS)) {
 		parts.push(`<option value="${value}">${label}</option>`);
 	}
 	parts.push(`</select></label>`);
-	parts.push(`<span class="mr_panels_toggle hidden" id="mr_panels_toggle" title="Show hidden panels">+ panels</span>`);
+	parts.push(`<span class="mr_panels_toggle hidden" id="mr_panels_toggle" title="Open closed workspace panels">+ panels</span>`);
+	parts.push(`<span class="mr_reset_layout" title="Reset workspace layout to default">reset</span>`);
+	parts.push(`<span class="mr_return_origin hidden" id="mr_return_origin" title="Return to the original position before moving the stone">↩ Return to original</span>`);
 	parts.push(`</div>`);
 	parts.push(`<div id="mr_hidden_chips" class="hidden"></div>`);
+	parts.push(`<div id="mr_dockview"></div>`);
 
-	parts.push(`<div id="mr_inner">`);
+	// Off-screen pool for persistent panel DOM elements so closing or switching
+	// layouts never destroys canvases (#treecanvas, charts) or #comments.
+	parts.push(`<div id="mr_panel_pool" class="hidden">`);
 	for (let sec of ALL_SECTIONS) {
-		parts.push(`<div class="mr_secbox" id="mr_secbox_${sec}">`);
-		parts.push(`<div class="mr_sechead">`);
-		parts.push(`<span class="mr_sectitle">${SECTION_TITLES[sec]}</span>`);
-		if (sec === "history" || sec === "options") {
-			parts.push(`<span class="mr_secstatus" id="mr_${sec}_status"></span>`);
-		}
-		parts.push(`<span class="mr_secctls">`);
-		if (YSCALE_SECTIONS.includes(sec)) {
+		let is_canvas = CHART_SECTIONS.includes(sec) || sec === "history";
+		let body_cls = (is_canvas || sec === "tree" || sec === "comments")
+			? "mr_panel_body mr_panel_body_fill"
+			: "mr_panel_body mr_panel_body_scroll";
+		parts.push(`<div class="mr_panel" id="mr_panel_${sec}" data-sec="${sec}">`);
+		if (sec === "history") {
+			parts.push(`<div class="mr_panel_bar"><span class="mr_secstatus" id="mr_history_status"></span><span class="mr_secctls"><span class="mr_secctl" id="mr_xscale_ctl_history" data-sec="history" data-act="xscale" title="Toggle log / linear visits axis">log</span></span></div>`);
+		} else if (sec === "options") {
+			parts.push(`<div class="mr_panel_bar"><span class="mr_secstatus" id="mr_options_status"></span></div>`);
+		} else if (sec === "corridor") {
+			parts.push(`<div class="mr_panel_bar"><span class="mr_secstatus" id="mr_corridor_status"></span><span class="mr_secctls"><span class="mr_secctl" data-sec="corridor" data-act="probe_deeper" title="Run deeper continuation probes on current candidates">probe deeper</span></span></div>`);
+		} else if (YSCALE_SECTIONS.includes(sec)) {
+			parts.push(`<div class="mr_panel_bar"><span class="mr_secstatus"></span><span class="mr_secctls">`);
 			parts.push(`<span class="mr_secctl" id="mr_yscale_ctl_${sec}" data-sec="${sec}" data-act="yscale" title="Toggle linear / log2 y scale">lin</span>`);
 			parts.push(`<span class="mr_secctl" id="mr_window_ctl_${sec}" data-sec="${sec}" data-act="window" title="Toggle full history / sliding window">full</span>`);
 			parts.push(`<label class="mr_metric" title="Moves retained when sliding window is enabled">last <input id="mr_window_n_${sec}" type="number" min="1" max="1000" step="1"></label>`);
+			parts.push(`</span></div>`);
+		} else if (sec === "distribution") {
+			parts.push(`<div class="mr_panel_bar"><span class="mr_secstatus"></span><span class="mr_secctls"><label class="mr_metric" title='Enter "all" or an engine-ranked top N'>candidates <input id="mr_distribution_top_n" type="text" inputmode="numeric"></label></span></div>`);
 		}
-		if (sec === "distribution") {
-			parts.push(`<label class="mr_metric" title='Enter "all" or an engine-ranked top N'>candidates <input id="mr_distribution_top_n" type="text" inputmode="numeric"></label>`);
-		}
-		if (sec === "history") {
-			parts.push(`<span class="mr_secctl" id="mr_xscale_ctl_history" data-sec="history" data-act="xscale" title="Toggle log / linear visits axis">log</span>`);
-		}
-		parts.push(`<span class="mr_secctl mr_secctl_chrome" data-sec="${sec}" data-act="up" title="Move section up">▲</span>`);
-		parts.push(`<span class="mr_secctl mr_secctl_chrome" data-sec="${sec}" data-act="down" title="Move section down">▼</span>`);
-		parts.push(`<span class="mr_secctl mr_secctl_chrome" data-sec="${sec}" data-act="hide" title="Hide section">✕</span>`);
-		parts.push(`</span>`);
-		parts.push(`</div>`);
-		if (CHART_SECTIONS.includes(sec)) {
-			parts.push(`<div class="mr_seccontent"><canvas class="mr_chartcanvas" id="mr_canvas_${sec}"></canvas></div>`);
-			parts.push(`<div class="mr_width_drag" title="Drag to resize all sections"></div>`);
-		} else if (sec === "history") {
-			parts.push(`<div class="mr_seccontent"><canvas class="mr_chartcanvas" id="mr_canvas_history"></canvas></div>`);
-			parts.push(`<div class="mr_width_drag" title="Drag to resize all sections"></div>`);
+		if (is_canvas) {
+			parts.push(`<div class="${body_cls}"><canvas class="mr_chartcanvas" id="mr_canvas_${sec}"></canvas></div>`);
 		} else {
-			parts.push(`<div class="mr_seccontent" id="mr_seccontent_${sec}"></div>`);
-			if (sec === "tree") {
-				parts.push(`<div class="mr_width_drag" title="Drag to resize all sections"></div>`);
-			}
+			parts.push(`<div class="${body_cls}" id="mr_seccontent_${sec}"></div>`);
 		}
 		parts.push(`</div>`);
 	}
@@ -272,20 +268,48 @@ function init() {
 
 	outer.innerHTML = parts.join("\n");
 
-	// Adopt the stock comments textarea into our comments section. It keeps its
-	// id, so comment_drawer and the input handlers keep working untouched.
+	// Adopt stock widgets into their Dockview panels. Their ids stay unchanged,
+	// so comment_drawer, tree_drawer and all input handlers work untouched.
 
 	document.getElementById("mr_seccontent_comments").appendChild(document.getElementById("comments"));
 	document.getElementById("mr_seccontent_tree").appendChild(document.getElementById("treecanvas"));
 
+	let panel_elements = {};
+	let seccontents = {};
+	for (let sec of ALL_SECTIONS) {
+		panel_elements[sec] = document.getElementById(`mr_panel_${sec}`);
+		let content = document.getElementById(`mr_seccontent_${sec}`);
+		if (content) {
+			seccontents[sec] = content;
+		}
+	}
+
+	let yscale_ctls = {};
+	let window_ctls = {};
+	let window_inputs = {};
+	for (let sec of YSCALE_SECTIONS) {
+		yscale_ctls[sec] = document.getElementById(`mr_yscale_ctl_${sec}`);
+		window_ctls[sec] = document.getElementById(`mr_window_ctl_${sec}`);
+		window_inputs[sec] = document.getElementById(`mr_window_n_${sec}`);
+	}
+
 	let ret = Object.assign(Object.create(move_report_prototype), {
 
 		outer: outer,
-		inner: document.getElementById("mr_inner"),
+		dock_host: document.getElementById("mr_dockview"),
+		panel_pool: document.getElementById("mr_panel_pool"),
 		chips: document.getElementById("mr_hidden_chips"),
 		panels_toggle: document.getElementById("mr_panels_toggle"),
 		panels_tray_open: false,
 		breadth_ctl: document.getElementById("mr_breadth_ctl"),
+		breadth_view_select: document.getElementById("mr_breadth_view"),
+		distribution_top_n_input: document.getElementById("mr_distribution_top_n"),
+		xscale_ctl_history: document.getElementById("mr_xscale_ctl_history"),
+		yscale_ctls: yscale_ctls,
+		window_ctls: window_ctls,
+		window_inputs: window_inputs,
+		seccontents: seccontents,
+		return_origin_btn: document.getElementById("mr_return_origin"),
 		game_identity: document.getElementById("mr_game_identity"),
 
 		quality_canvas: document.getElementById("mr_canvas_quality"),
@@ -313,7 +337,40 @@ function init() {
 		history_hits: [],			// Eval history label boxes from the last draw: {move, x0, y0, x1, y1}.
 		history_status: document.getElementById("mr_history_status"),
 		options_status: document.getElementById("mr_options_status"),
+		corridor_status: document.getElementById("mr_corridor_status"),
+		preview_seq_key: "",
 
+	});
+
+	ret.workspace = workspace.create_workspace(
+		ret.dock_host,
+		ret.panel_pool,
+		panel_elements,
+		{
+			on_change: () => {
+				if (global.tree_drawer) {
+					tree_drawer.weak_draw = true;
+				}
+				if (global.hub && hub.node && !hub.node.destroyed) {
+					ret.draw(hub.node);
+				}
+			},
+			on_panel_active: (id) => {
+				if (id === "tree" && global.tree_drawer) {
+					tree_drawer.weak_draw = true;
+				}
+				if (global.hub && hub.node && !hub.node.destroyed) {
+					ret.draw(hub.node);
+				}
+			},
+		}
+	);
+	ret.workspace.restore_from_config();
+
+	continuation_prober.on_update(() => {
+		if (global.hub && hub.node && !hub.node.destroyed) {
+			ret.draw(hub.node);
+		}
 	});
 
 	outer.addEventListener("mousedown", (event) => {
@@ -324,24 +381,35 @@ function init() {
 			return;
 		}
 
+		if (event.target.closest(".mr_return_origin")) {
+			event.preventDefault();
+			hub.return_to_move_origin();
+			return;
+		}
+
+		let preset_btn = event.target.closest(".mr_preset");
+		if (preset_btn) {
+			event.preventDefault();
+			ret.workspace.apply_preset(preset_btn.dataset.preset, true);
+			if (hub.node && !hub.node.destroyed) {
+				ret.draw(hub.node);
+			}
+			return;
+		}
+
+		if (event.target.closest(".mr_reset_layout")) {
+			event.preventDefault();
+			ret.workspace.apply_preset("review", true);
+			if (hub.node && !hub.node.destroyed) {
+				ret.draw(hub.node);
+			}
+			return;
+		}
+
 		if (event.target.closest(".mr_panels_toggle")) {
 			event.preventDefault();
 			ret.panels_tray_open = !ret.panels_tray_open;
 			ret.apply_layout();
-			return;
-		}
-
-		let width_drag = event.target.closest(".mr_width_drag");
-		if (width_drag) {
-			event.preventDefault();
-			ret.start_width_drag(event);
-			return;
-		}
-
-		let ctl = event.target.closest(".mr_ctl");
-		if (ctl) {
-			event.preventDefault();
-			ret.adjust(ctl.dataset.act);
 			return;
 		}
 
@@ -355,7 +423,29 @@ function init() {
 		let chip = event.target.closest(".mr_chip");
 		if (chip) {
 			event.preventDefault();
-			ret.section_action(chip.dataset.sec, "show");
+			ret.workspace.focus_or_open(chip.dataset.sec);
+			if (hub.node && !hub.node.destroyed) {
+				ret.draw(hub.node);
+			}
+			return;
+		}
+
+		let trace_btn = event.target.closest("[data-trace-gtp]");
+		if (trace_btn) {
+			event.preventDefault();
+			ret.trace_candidate(hub.node, trace_btn.dataset.traceGtp);
+			return;
+		}
+
+		let play_seq_el = event.target.closest("[data-play-seq]");
+		if (play_seq_el) {
+			event.preventDefault();
+			let seq = play_seq_el.dataset.playSeq.trim().split(/\s+/).filter(Boolean);
+			if (seq.length > 0) {
+				hub.show_sequence_preview(null);
+				ret.preview_seq_key = "";
+				hub.play_gtp_sequence(seq);
+			}
 			return;
 		}
 
@@ -364,22 +454,40 @@ function init() {
 			event.preventDefault();
 			let s = hub.node.get_board().parse_gtp_move(tr.dataset.gtp);
 			if (s) {
+				hub.show_sequence_preview(null);
+				ret.preview_seq_key = "";
 				hub.try_move(s);
 			}
 			return;
 		}
 	});
 
-	document.getElementById("mr_distribution_top_n").addEventListener("change", (event) => {
+	outer.addEventListener("mouseover", (event) => {
+		let preview_el = event.target.closest("[data-preview-seq]");
+		let key = preview_el ? preview_el.dataset.previewSeq.trim() : "";
+		if (key !== ret.preview_seq_key) {
+			ret.preview_seq_key = key;
+			hub.show_sequence_preview(key ? key.split(/\s+/).filter(Boolean) : null);
+		}
+	});
+
+	outer.addEventListener("mouseleave", () => {
+		if (ret.preview_seq_key !== "") {
+			ret.preview_seq_key = "";
+			hub.show_sequence_preview(null);
+		}
+	});
+
+	ret.distribution_top_n_input.addEventListener("change", (event) => {
 		ret.set_distribution_top_n(event.target.value);
 	});
 
-	document.getElementById("mr_breadth_view").addEventListener("change", (event) => {
+	ret.breadth_view_select.addEventListener("change", (event) => {
 		ret.set_breadth_view(event.target.value);
 	});
 
 	for (let sec of YSCALE_SECTIONS) {
-		let input = document.getElementById(`mr_window_n_${sec}`);
+		let input = ret.window_inputs[sec];
 		input.addEventListener("input", (event) => {
 			ret.set_chart_window_n(sec, event.target.value, false);
 		});
@@ -465,37 +573,42 @@ function init() {
 	});
 
 	// Canvas backing dimensions do not follow CSS layout automatically. Observe
-	// the chart containers so window resize, maximize, zoom, and flex reflow all
-	// redraw at their final widths.
+	// both axes of every chart and tree container so Dockview split drags,
+	// tab switches, window resize, maximize, and zoom redraw at exact size.
 
-	ret.observed_chart_widths = [];
+	let observed_boxes = [
+		ret.quality_canvas.parentElement,
+		ret.breadth_canvas.parentElement,
+		ret.status_canvas.parentElement,
+		ret.distribution_canvas.parentElement,
+		ret.history_canvas.parentElement,
+		ret.seccontents.tree,
+	];
+
+	ret.observed_dims = [];
 	ret.resize_frame = null;
 	ret.resize_observer = new ResizeObserver(() => {
-		let widths = [
-			ret.quality_canvas,
-			ret.breadth_canvas,
-			ret.status_canvas,
-			ret.distribution_canvas,
-			ret.history_canvas,
-		].map(canvas => canvas.parentElement.clientWidth);
-
-		if (widths.every((width, i) => width === ret.observed_chart_widths[i])) {
+		let dims = observed_boxes.map(el => `${el.clientWidth}x${el.clientHeight}`);
+		if (dims.every((d, i) => d === ret.observed_dims[i])) {
 			return;
 		}
-		ret.observed_chart_widths = widths;
+		ret.observed_dims = dims;
+		if (global.tree_drawer) {
+			tree_drawer.weak_draw = true;
+		}
 		if (ret.resize_frame !== null) {
 			cancelAnimationFrame(ret.resize_frame);
 		}
 		ret.resize_frame = requestAnimationFrame(() => {
 			ret.resize_frame = null;
-			if (hub.node && !hub.node.destroyed) {
+			if (global.hub && hub.node && !hub.node.destroyed) {
 				ret.draw(hub.node);
 			}
 		});
 	});
 
-	for (let canvas of [ret.quality_canvas, ret.breadth_canvas, ret.status_canvas, ret.distribution_canvas, ret.history_canvas]) {
-		ret.resize_observer.observe(canvas.parentElement);
+	for (let el of observed_boxes) {
+		ret.resize_observer.observe(el);
 	}
 
 	return ret;
@@ -506,57 +619,13 @@ let move_report_prototype = {
 	// ------------------------------------------------------------ live adjustment
 
 	visible_sections: function() {
+		return this.workspace ? this.workspace.open_ids() : [];
+	},
 
-		// Validate what's in the config (it's user-editable) without silently
-		// rewriting the file; invalid entries just don't display.
-
-		let arr = config.move_report_sections;
-		if (!Array.isArray(arr)) {
-			return Array.from(ALL_SECTIONS);
+	sync_sections_from_config: function() {
+		if (this.workspace) {
+			this.workspace.sync_open_panels(config.move_report_sections);
 		}
-		return arr.filter((sec, i) => ALL_SECTIONS.includes(sec) && arr.indexOf(sec) === i);
-	},
-
-	adjust: function(act) {
-
-		let [key, dir] = {
-			width_down: ["move_report_width",        -1],
-			width_up:   ["move_report_width",        +1],
-			chart_down: ["move_report_chart_height", -1],
-			chart_up:   ["move_report_chart_height", +1],
-		}[act];
-
-		let lim = LIMITS[key];
-		let step = lim.proportional ? Math.max(1, Math.round(config[key] * 0.1 / lim.step)) * lim.step : lim.step;
-		let val = config[key] + (dir * step);
-		config[key] = Math.max(lim.min, Math.min(lim.max, val));
-
-		config_io.save();
-		this.draw(hub.node);
-	},
-
-	start_width_drag: function(event) {
-
-		let start_x = event.clientX;
-		let start_width = config.move_report_width;
-		let lim = LIMITS.move_report_width;
-
-		let move = (move_event) => {
-			let width = Math.round(start_width + move_event.clientX - start_x);
-			config.move_report_width = Math.max(lim.min, Math.min(lim.max, width));
-			this.draw(hub.node);
-		};
-
-		let end = () => {
-			document.removeEventListener("mousemove", move);
-			document.removeEventListener("mouseup", end);
-			document.documentElement.classList.remove("mr_resizing");
-			config_io.save();
-		};
-
-		document.documentElement.classList.add("mr_resizing");
-		document.addEventListener("mousemove", move);
-		document.addEventListener("mouseup", end);
 	},
 
 	set_distribution_top_n: function(raw_value) {
@@ -564,7 +633,7 @@ let move_report_prototype = {
 		let cleaned = String(raw_value).trim().toLowerCase();
 		let value = cleaned === "all" ? 0 : Number(cleaned);
 		let lim = LIMITS.move_report_distribution_top_n;
-		let input = document.getElementById("mr_distribution_top_n");
+		let input = this.distribution_top_n_input;
 
 		if (cleaned === "" || !Number.isInteger(value) || value < lim.min || value > lim.max) {
 			input.setCustomValidity(`Enter "all" or a whole number from 1 to ${lim.max}.`);
@@ -595,7 +664,7 @@ let move_report_prototype = {
 		let key = `move_report_${sec}_window_n`;
 		let value = Number(raw_value);
 		let lim = LIMITS[key];
-		let input = document.getElementById(`mr_window_n_${sec}`);
+		let input = this.window_inputs[sec];
 
 		if (!Number.isInteger(value) || value < lim.min || value > lim.max) {
 			if (report_invalid) {
@@ -614,7 +683,29 @@ let move_report_prototype = {
 		this.draw(hub.node);
 	},
 
+	probe_deeper: function(node) {
+		if (!node || node.destroyed || !node.has_valid_analysis()) {
+			return;
+		}
+		let infos = options_table_infos(node);
+		let current_visits = config.continuation_probe_visits || 120;
+		let target_visits = Math.min(2000, Math.max(current_visits * 2, 240));
+		continuation_prober.schedule_for_node(node, infos.map(i => i.move), {force: true, visits: target_visits});
+	},
+
+	trace_candidate: function(node, gtp) {
+		if (!node || node.destroyed || !gtp) {
+			return;
+		}
+		continuation_prober.trace_corridor(node, gtp, 5);
+	},
+
 	section_action: function(sec, act) {
+
+		if (act === "probe_deeper" && sec === "corridor") {
+			this.probe_deeper(hub.node);
+			return;
+		}
 
 		if (act === "yscale" && YSCALE_SECTIONS.includes(sec)) {
 			let key = `move_report_${sec}_yscale`;
@@ -638,46 +729,14 @@ let move_report_prototype = {
 			this.draw(hub.node);
 			return;
 		}
-
-		let visible = this.visible_sections();
-		let i = visible.indexOf(sec);
-
-		if (act === "up" && i > 0) {
-			[visible[i - 1], visible[i]] = [visible[i], visible[i - 1]];
-		} else if (act === "down" && i >= 0 && i < visible.length - 1) {
-			[visible[i], visible[i + 1]] = [visible[i + 1], visible[i]];
-		} else if (act === "hide" && i >= 0) {
-			visible.splice(i, 1);
-		} else if (act === "show" && i === -1 && ALL_SECTIONS.includes(sec)) {
-			visible.push(sec);
-		}
-
-		config.move_report_sections = visible;
-		config_io.save();
-		this.draw(hub.node);
 	},
 
 	apply_layout: function() {
 
-		// No concrete styles are ever set from JS: config-driven layout values
-		// are published as CSS custom properties, and every actual style rule
-		// (including all font sizes, via the --fs-* scale) lives in ogatak.css.
-
-		this.outer.style.setProperty("--mr-card-width", config.move_report_width.toString() + "px");
-		this.outer.style.setProperty("--mr-tree-height", config.tree_pane_height.toString() + "px");
-
 		let visible = this.visible_sections();
-
-		for (let sec of ALL_SECTIONS) {
-			let box = document.getElementById(`mr_secbox_${sec}`);
-			let i = visible.indexOf(sec);
-			box.classList.toggle("hidden", i === -1);
-			box.style.setProperty("--mr-sec-order", i.toString());
-		}
-
 		let hidden_sections = ALL_SECTIONS.filter(sec => !visible.includes(sec));
 		let chips = hidden_sections
-			.map(sec => `<span class="mr_chip" data-sec="${sec}" title="Show section">+ ${SECTION_TITLES[sec].toLowerCase()}</span>`)
+			.map(sec => `<span class="mr_chip" data-sec="${sec}" title="Open panel">+ ${SECTION_TITLES[sec].toLowerCase()}</span>`)
 			.join(" ");
 
 		if (chips !== this.chips_cache) {
@@ -702,9 +761,20 @@ let move_report_prototype = {
 
 		this.breadth_ctl.classList.toggle("hidden", !visible.includes("breadth") && !visible.includes("distribution"));
 
+		// Show the one-click return button whenever we branched away via Ctrl+click stone move.
+		let origin = global.hub ? hub.move_origin : null;
+		let show_origin = Boolean(origin && !origin.destroyed && origin !== hub.node);
+		this.return_origin_btn.classList.toggle("hidden", !show_origin);
+		if (show_origin) {
+			let lbl = origin.depth > 0 ? `↩ Return to #${origin.depth}` : `↩ Return to start`;
+			if (this.return_origin_btn.textContent !== lbl) {
+				this.return_origin_btn.textContent = lbl;
+			}
+		}
+
 		for (let sec of YSCALE_SECTIONS) {
 			let label = config[`move_report_${sec}_yscale`] === "log2" ? "log₂" : "lin";
-			let control = document.getElementById(`mr_yscale_ctl_${sec}`);
+			let control = this.yscale_ctls[sec];
 			if (control.textContent !== label) {
 				control.textContent = label;
 			}
@@ -713,13 +783,13 @@ let move_report_prototype = {
 			if (typeof windowed !== "boolean") {
 				throw new Error(`apply_layout(): move_report_${sec}_windowed must be boolean`);
 			}
-			let window_control = document.getElementById(`mr_window_ctl_${sec}`);
+			let window_control = this.window_ctls[sec];
 			let window_label = windowed ? "window" : "full";
 			if (window_control.textContent !== window_label) {
 				window_control.textContent = window_label;
 			}
 
-			let window_input = document.getElementById(`mr_window_n_${sec}`);
+			let window_input = this.window_inputs[sec];
 			let window_n = config[`move_report_${sec}_window_n`];
 			if (document.activeElement !== window_input &&
 				window_input.value !== window_n.toString()) {
@@ -727,13 +797,13 @@ let move_report_prototype = {
 			}
 		}
 
-		let xscale_control = document.getElementById("mr_xscale_ctl_history");
+		let xscale_control = this.xscale_ctl_history;
 		let xscale_label = config.move_report_history_xscale === "log" ? "log visits" : "linear visits";
 		if (xscale_control.textContent !== xscale_label) {
 			xscale_control.textContent = xscale_label;
 		}
 
-		let top_n_input = document.getElementById("mr_distribution_top_n");
+		let top_n_input = this.distribution_top_n_input;
 		let top_n_label = config.move_report_distribution_top_n === 0
 			? "all"
 			: config.move_report_distribution_top_n.toString();
@@ -742,7 +812,7 @@ let move_report_prototype = {
 			top_n_input.value = top_n_label;
 		}
 
-		let breadth_view = document.getElementById("mr_breadth_view");
+		let breadth_view = this.breadth_view_select;
 		if (breadth_view.value !== config.move_report_breadth_view) {
 			breadth_view.value = config.move_report_breadth_view;
 		}
@@ -783,11 +853,14 @@ let move_report_prototype = {
 	bind_row_colours: function(element) {
 
 		// ogatak.html's CSP (style-src 'self') blocks style="" attributes in
-		// generated HTML, but not CSSOM writes, so data-colour becomes
-		// --val-colour here.
+		// generated HTML, but not CSSOM writes, so data-* attributes become
+		// CSS custom properties here.
 
 		for (let el of element.querySelectorAll("[data-colour]")) {
 			el.style.setProperty("--val-colour", el.dataset.colour);
+		}
+		for (let el of element.querySelectorAll("[data-nar-pct]")) {
+			el.style.setProperty("--nar-pct", el.dataset.narPct + "%");
 		}
 	},
 
@@ -857,39 +930,60 @@ let move_report_prototype = {
 		}
 
 		let visible = this.visible_sections();
+		let need_probes = visible.includes("options") || visible.includes("corridor");
+
+		if (need_probes && config.continuation_probe && node.has_valid_analysis()) {
+			let opt_infos = options_table_infos(node);
+			continuation_prober.schedule_for_node(node, opt_infos.map(i => i.move));
+		}
 
 		if (visible.includes("options")) {
-			let show_opt_visits = !visible.includes("history") && node.has_valid_analysis();
+			let show_opt_visits = !this.workspace.is_visible("history") && node.has_valid_analysis();
 			let opt_status = show_opt_visits ? `${this.fmt_visits(node.analysis.rootInfo.visits)} visits` : "";
 			if (this.options_status.textContent !== opt_status) {
 				this.options_status.textContent = opt_status;
 			}
 		}
 
+		if (visible.includes("corridor")) {
+			let st = continuation_prober.status(node);
+			let cor_status = "";
+			if (node.has_valid_analysis()) {
+				let infos = options_table_infos(node);
+				let ready = infos.filter(info => continuation_prober.lookup(node, [info.move])).length;
+				let busy = st.in_flight || st.queued > 0;
+				cor_status = busy
+					? `probing ${ready}/${infos.length} (${st.queued} queued)`
+					: `${ready}/${infos.length} continuations`;
+			}
+			if (this.corridor_status.textContent !== cor_status) {
+				this.corridor_status.textContent = cor_status;
+			}
+		}
+
 		for (let sec of visible) {
 			if (sec === "quality") {
-				this.draw_quality(node);
+				if (this.workspace.is_visible(sec)) this.draw_quality(node);
 			} else if (sec === "breadth") {
-				this.draw_breadth(node);
+				if (this.workspace.is_visible(sec)) this.draw_breadth(node);
 			} else if (sec === "status") {
-				this.draw_status(node);
+				if (this.workspace.is_visible(sec)) this.draw_status(node);
 			} else if (sec === "distribution") {
-				this.draw_distribution(node);
+				if (this.workspace.is_visible(sec)) this.draw_distribution(node);
 			} else if (sec === "history") {
-				this.draw_history(node);
+				if (this.workspace.is_visible(sec)) this.draw_history(node);
 			} else if (HTML_SECTIONS.includes(sec)) {
 				let html = this[`html_${sec}`](node);
 				if (html !== this.content_cache[sec]) {
-					let element = document.getElementById(`mr_seccontent_${sec}`);
+					let element = this.seccontents[sec];
 					element.innerHTML = html;
 					this.bind_row_colours(element);
 					this.content_cache[sec] = html;
 				}
 			}
-				// "comments" and "tree" are stock widgets adopted into their cards.
 		}
 
-		if (!visible.includes("history") && (this.history_pin || this.history_label_hover)) {
+		if (!this.workspace.is_visible("history") && (this.history_pin || this.history_label_hover)) {
 			this.history_pin = null;
 			this.history_label_hover = null;
 			hub.show_chart_point(null);
@@ -1034,6 +1128,33 @@ let move_report_prototype = {
 		return parts.join("\n");
 	},
 
+	format_reply_tooltip: function(info, summary) {
+		if (!summary) {
+			return "Waiting for continuation probe...";
+		}
+		let lines = [];
+		let src_lbl = summary.source === "tree" ? "from explored tree" : "probed";
+		lines.push(`After ${info.move} (${this.fmt_visits(summary.visits)} visits, ${src_lbl}):`);
+		if (summary.gap2 !== null) {
+			lines.push(`2nd-best reply loses ${summary.gap2.toFixed(2)} pts`);
+		}
+		if (summary.eff_moves !== null) {
+			lines.push(`Effective replies (exp H): ${summary.eff_moves.toFixed(2)}`);
+		}
+		if (summary.policy_cost !== null) {
+			lines.push(`Policy-weighted reply loss: ${summary.policy_cost.toFixed(2)} pts`);
+		}
+		if (summary.top_replies && summary.top_replies.length > 0) {
+			let rep_str = summary.top_replies.slice(0, 4).map(r => {
+				let c = r.cost <= 0.005 ? "best" : `-${r.cost.toFixed(2)}`;
+				let p = typeof r.prior === "number" ? ` ${Math.round(r.prior * 100)}%` : "";
+				return `${r.move} (${c}${p})`;
+			}).join(" · ");
+			lines.push(`Replies: ${rep_str}`);
+		}
+		return lines.join("\n");
+	},
+
 	html_options: function(node) {
 
 		let parts = [];
@@ -1049,6 +1170,9 @@ let move_report_prototype = {
 			let best = explored.best_info(node);
 			let active_is_b = node.get_board().active === "b";
 			let costs = infos.map(info => info_cost(info, best.scoreLead, active_is_b));
+			let summaries = infos.map(info => continuation_prober.lookup(node, [info.move]));
+			let show_nar = config.continuation_probe || summaries.some(Boolean);
+			let rel_scale = show_nar ? narrowness.relative_narrowness_scale(summaries) : null;
 
 			// Gradient cap: worst displayed cost, floored at 2 pts so near-equal
 			// options stay near-equal in color (PRODUCT.md rule 6)...
@@ -1056,7 +1180,11 @@ let move_report_prototype = {
 			let cap = Math.max(2, ...costs.filter(c => c !== null));
 
 			parts.push(`<table class="mr_cands">`);
-			parts.push(`<tr class="mr_head"><td>move</td><td>score</td><td>win</td><td>costs</td><td>visits</td></tr>`);
+			if (show_nar) {
+				parts.push(`<tr class="mr_head"><td>move</td><td>score</td><td>win</td><td>costs</td><td title="Points opponent loses on their 2nd-best reply (larger = narrower/forcing)">opp gap</td><td title="Effective opponent replies exp(H) with relative narrowness bar (1.0 = forced)">opp width</td><td>visits</td></tr>`);
+			} else {
+				parts.push(`<tr class="mr_head"><td>move</td><td>score</td><td>win</td><td>costs</td><td>visits</td></tr>`);
+			}
 
 			for (let i = 0; i < infos.length; i++) {
 
@@ -1075,12 +1203,34 @@ let move_report_prototype = {
 					? `<td class="mr_explored_visits">${this.fmt_visits(info.visits)} <span class="mr_explored">explored</span></td>`
 					: `<td class="mr_dim">${this.fmt_visits(info.visits)}</td>`;
 
+				let nar_html = "";
+				if (show_nar) {
+					let sum = summaries[i];
+					let tip = safe_html(this.format_reply_tooltip(info, sum));
+					let preview_seq = [info.move];
+					if (sum && Array.isArray(sum.best_pv) && sum.best_pv.length > 0) {
+						preview_seq.push(...sum.best_pv.slice(0, 6));
+					} else if (Array.isArray(info.pv) && info.pv.length > 1) {
+						preview_seq = info.pv.slice(0, 7);
+					}
+					let preview_attr = ` data-preview-seq="${safe_html(preview_seq.join(" "))}"`;
+					let gap_str = sum && sum.gap2 !== null ? `+${sum.gap2.toFixed(2)}` : "…";
+					let width_cell = "…";
+					if (sum && sum.eff_moves !== null) {
+						let ratio = rel_scale && rel_scale.max_eff > 0 ? sum.eff_moves / rel_scale.max_eff : 0.5;
+						let pct = Math.round(Math.max(10, Math.min(100, ratio * 100)));
+						width_cell = `<span class="mr_nar_wrap"><span class="mr_nar_bar"><span class="mr_nar_fill" data-nar-pct="${pct}"></span></span><span class="mr_nar_num">${sum.eff_moves.toFixed(1)}</span></span>`;
+					}
+					nar_html = `<td class="mr_nar_gap" title="${tip}"${preview_attr}>${gap_str}</td><td class="mr_nar_width" title="${tip}"${preview_attr}>${width_cell}</td>`;
+				}
+
 				parts.push(
 					`<tr class="mr_cand" data-gtp="${info.move}"${val_bind}>` +
 					`<td class="mr_coord mr_val">${info.move}</td>` +
 					`<td>${this.fmt_score(info.scoreLead)}</td>` +
 					`<td>${this.fmt_winrate(info.winrate)}</td>` +
 					`<td class="mr_val">${cost_str}</td>` +
+					nar_html +
 					visits_html +
 					`</tr>`
 				);
@@ -1100,15 +1250,142 @@ let move_report_prototype = {
 		return parts.join("\n");
 	},
 
+	html_corridor: function(node) {
+
+		let parts = [];
+
+		if (!node.has_valid_analysis()) {
+			parts.push(`<div class="mr_quality mr_dim">${hub.engine.desired ? "analysing..." : "engine is not analysing (press Space)"}</div>`);
+			return parts.join("\n");
+		}
+
+		let root_sum = narrowness.summarize_position(node.analysis, node.get_board().active === "b");
+		if (root_sum) {
+			let gap_s = root_sum.gap2 !== null ? `+${root_sum.gap2.toFixed(2)} pts` : "single";
+			let eff_s = root_sum.eff_moves !== null ? root_sum.eff_moves.toFixed(2) : "—";
+			let pol_s = root_sum.policy_cost !== null ? `${root_sum.policy_cost.toFixed(2)} pts` : "—";
+			parts.push(
+				`<div class="mr_corridor_root">` +
+				`<span class="mr_cor_label">Current position</span>` +
+				`<span title="2nd-best move loss at this position">gap₂ <b>${gap_s}</b></span>` +
+				`<span title="Effective moves exp(H) at this position">N_eff <b>${eff_s}</b></span>` +
+				`<span title="Policy-weighted expected point loss (higher = sharper/trickier)">π loss <b>${pol_s}</b></span>` +
+				`</div>`
+			);
+		}
+
+		let infos = options_table_infos(node);
+		let best = explored.best_info(node);
+		let active_is_b = node.get_board().active === "b";
+		let costs = infos.map(info => info_cost(info, best.scoreLead, active_is_b));
+		let summaries = infos.map(info => continuation_prober.lookup(node, [info.move]));
+		let rel_scale = narrowness.relative_narrowness_scale(summaries);
+		let cap = Math.max(2, ...costs.filter(c => c !== null));
+
+		parts.push(`<table class="mr_cands mr_corridor_table">`);
+		parts.push(
+			`<tr class="mr_head">` +
+			`<td>move</td>` +
+			`<td>cost</td>` +
+			`<td title="Points opponent loses on 2nd-best reply">opp gap₂</td>` +
+			`<td title="Effective opponent replies exp(H) (1.0 = forced)">opp N_eff</td>` +
+			`<td title="Opponent policy-weighted expected loss in pts (low = obvious reply, high = tricky/sharp)">opp π loss</td>` +
+			`<td title="Click to play sequence into variation tree; hover to preview on board">continuation</td>` +
+			`<td></td>` +
+			`</tr>`
+		);
+
+		for (let i = 0; i < infos.length; i++) {
+			let info = infos[i];
+			let sum = summaries[i];
+			let cost_str = loss_text(costs[i], config.basis_point_display, false, info === best);
+			if (cost_str === ZERO_LOSS) {
+				cost_str = `<span class="mr_zero_loss">${ZERO_LOSS}</span>`;
+			}
+			let val_bind = costs[i] === null ? "" : ` data-colour="${this.value_colour(costs[i], cap)}"`;
+
+			let chain = continuation_prober.corridor_chain(node, info.move, 6);
+			let seq = [];
+			let seq_html = "";
+			if (chain.length > 0) {
+				seq = chain.map(step => step.move_played);
+				let tail = chain[chain.length - 1];
+				let tail_reply = tail.summary && tail.summary.best_move ? tail.summary.best_move : null;
+				if (tail_reply) {
+					seq.push(tail_reply);
+				}
+				let parts_seq = chain.map((step, idx) => {
+					if (idx === 0) {
+						return `<span class="mr_cor_step">${safe_html(step.move_played)}</span>`;
+					}
+					let g = step.summary && step.summary.gap2 !== null ? ` (gap₂ +${step.summary.gap2.toFixed(1)})` : "";
+					return `<span class="mr_cor_step" title="${safe_html(step.move_played)}${safe_html(g)}">${safe_html(step.move_played)}</span>`;
+				});
+				if (tail_reply) {
+					let g = tail.summary && tail.summary.gap2 !== null ? ` (gap₂ +${tail.summary.gap2.toFixed(1)})` : "";
+					parts_seq.push(`<span class="mr_cor_step" title="Best reply ${safe_html(tail_reply)}${safe_html(g)}">${safe_html(tail_reply)}</span>`);
+				}
+				seq_html = parts_seq.join(" → ");
+			} else if (sum && Array.isArray(sum.best_pv) && sum.best_pv.length > 0) {
+				seq = [info.move, ...sum.best_pv.slice(0, 5)];
+				seq_html = seq.map(m => `<span class="mr_cor_step">${safe_html(m)}</span>`).join(" ");
+			} else if (Array.isArray(info.pv) && info.pv.length > 0) {
+				seq = info.pv.slice(0, 6);
+				seq_html = seq.map(m => `<span class="mr_cor_step">${safe_html(m)}</span>`).join(" ");
+			} else {
+				seq = [info.move];
+				seq_html = safe_html(info.move);
+			}
+
+			let seq_attr = safe_html(seq.join(" "));
+			let tip = safe_html(this.format_reply_tooltip(info, sum));
+			let gap_str = sum && sum.gap2 !== null ? `+${sum.gap2.toFixed(2)}` : "…";
+			let pol_str = sum && sum.policy_cost !== null ? sum.policy_cost.toFixed(2) : "…";
+
+			let eff_html = "…";
+			if (sum && sum.eff_moves !== null) {
+				let ratio = rel_scale && rel_scale.max_eff > 0 ? sum.eff_moves / rel_scale.max_eff : 0.5;
+				let pct = Math.round(Math.max(10, Math.min(100, ratio * 100)));
+				eff_html = `<span class="mr_nar_wrap"><span class="mr_nar_bar"><span class="mr_nar_fill" data-nar-pct="${pct}"></span></span><span class="mr_nar_num">${sum.eff_moves.toFixed(1)}</span></span>`;
+			}
+
+			let traced_len = chain.length;
+			let trace_label = traced_len > 2 ? `${traced_len}p` : "trace";
+
+			parts.push(
+				`<tr class="mr_cand" data-gtp="${info.move}" data-preview-seq="${seq_attr}"${val_bind}>` +
+				`<td class="mr_coord mr_val">${info.move}</td>` +
+				`<td class="mr_val">${cost_str}</td>` +
+				`<td class="mr_nar_gap" title="${tip}">${gap_str}</td>` +
+				`<td class="mr_nar_width" title="${tip}">${eff_html}</td>` +
+				`<td class="mr_nar_pol" title="${tip}">${pol_str}</td>` +
+				`<td class="mr_cor_seq" data-play-seq="${seq_attr}" title="Click to play sequence into variation tree">${seq_html}</td>` +
+				`<td><span class="mr_trace_btn" data-trace-gtp="${info.move}" title="Probe 5 plies deep along this corridor">${trace_label}</span></td>` +
+				`</tr>`
+			);
+		}
+
+		parts.push(`</table>`);
+		return parts.join("\n");
+	},
+
 	// ------------------------------------------------------------ chart shared bits
 
-	size_canvas: function(canvas, height_factor = 1) {
-		let want_width = Math.max(0, canvas.parentElement.clientWidth);
-		let want_height = Math.round(config.move_report_chart_height * height_factor);
+	size_canvas: function(canvas) {
+		let parent = canvas.parentElement;
+		if (!parent) {
+			return false;
+		}
+		let want_width = Math.max(0, parent.clientWidth);
+		let want_height = Math.max(0, parent.clientHeight);
+		if (want_width < 16 || want_height < 16) {
+			return false;
+		}
 		if (canvas.width !== want_width || canvas.height !== want_height) {
 			canvas.width = want_width;
 			canvas.height = want_height;
 		}
+		return true;
 	},
 
 	// ------------------------------------------------------------ current candidate-value views
@@ -1135,7 +1412,7 @@ let move_report_prototype = {
 	draw_distribution: function(node) {
 		let canvas = this.distribution_canvas;
 		let ctx = this.distribution_ctx;
-		this.size_canvas(canvas);
+		if (!this.size_canvas(canvas)) return;
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 		let profile = this.current_candidate_profile(node);
@@ -1158,7 +1435,7 @@ let move_report_prototype = {
 		let y0 = frame_y0 + Math.round(cap * 1.6);
 		let y1 = canvas.height - Math.round(cap * bottom_pad_lines);
 		this.distribution_hover_map = null;
-		if (x1 - x0 < 40) {
+		if (x1 - x0 < 40 || y1 - y0 < 24) {
 			return null;
 		}
 		ctx.fillStyle = "#181818ff";
@@ -1485,11 +1762,11 @@ let move_report_prototype = {
 	draw_breadth: function(node) {
 		let canvas = this.breadth_canvas;
 		let ctx = this.breadth_ctx;
-		this.size_canvas(canvas);
+		if (!this.size_canvas(canvas)) return;
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 		let data = this.breadth_data(node);
 		let {x0, x1, y0, y1, xs, end_depth, history} = data;
-		if (x1 - x0 < 40) {
+		if (x1 - x0 < 40 || y1 - y0 < 24) {
 			this.breadth_click_map = null;
 			return;
 		}
@@ -1751,12 +2028,12 @@ let move_report_prototype = {
 		let canvas = this.quality_canvas;
 		let ctx = this.quality_ctx;
 
-		this.size_canvas(canvas);
+		if (!this.size_canvas(canvas)) return;
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 		let {x0, x1, y0, y1} = chart_plot_rect(canvas);
 
-		if (x1 - x0 < 40) {
+		if (x1 - x0 < 40 || y1 - y0 < 24) {
 			this.quality_click_map = null;
 			return;
 		}
@@ -1924,12 +2201,12 @@ let move_report_prototype = {
 		let canvas = this.status_canvas;
 		let ctx = this.status_ctx;
 
-		this.size_canvas(canvas);
+		if (!this.size_canvas(canvas)) return;
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 		let {x0, x1, y0, y1} = chart_plot_rect(canvas);
 
-		if (x1 - x0 < 40) {
+		if (x1 - x0 < 40 || y1 - y0 < 24) {
 			this.status_click_map = null;
 			return;
 		}
@@ -2390,7 +2667,7 @@ let move_report_prototype = {
 			this.history_status.textContent = status;
 		}
 
-		this.size_canvas(this.history_canvas, HISTORY_CHART_HEIGHT);
+		if (!this.size_canvas(this.history_canvas)) return;
 		this.history_ctx.clearRect(0, 0, this.history_canvas.width, this.history_canvas.height);
 		this.draw_history_chart(data, this.history_label_hover || this.history_board_hover || this.pinned_history_move(node), this.pinned_history_move(node));
 	},

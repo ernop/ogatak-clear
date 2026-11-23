@@ -15,7 +15,7 @@ with open("package.json") as f:
 	version = json.load(f)["version"]
 
 useful_files = [file for file in os.listdir() if file.endswith(".js") or file.endswith(".html") or file.endswith(".css") or file == "package.json"]
-folders = ["modules", "gfx"]
+folders = ["modules", "gfx", "vendor"]
 
 for key, value in zips.items():
 	if not os.path.exists(value):

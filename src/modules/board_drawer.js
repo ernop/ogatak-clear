@@ -456,7 +456,7 @@ let board_drawer_prototype = {
 		ctx.stroke();
 	},
 
-	text: function(x, y, msg, colour) {
+	text: function(x, y, msg, colour, star_outline) {
 		if (this.coordinates) x++;
 		let ctx = this.ctx;
 		ctx.textAlign = "center";
@@ -465,10 +465,10 @@ let board_drawer_prototype = {
 		ctx.fillStyle = colour;
 		let gx = x * this.square_size + (this.square_size / 2);
 		let gy = y * this.square_size + (this.square_size / 2);
-		this.fill_label(msg, gx, gy + 2);
+		this.fill_label(msg, gx, gy + 2, star_outline);
 	},
 
-	text_two: function(x, y, msg, msg2, colour) {
+	text_two: function(x, y, msg, msg2, colour, star_outline) {
 		if (this.coordinates) x++;
 		let ctx = this.ctx;
 		ctx.textAlign = "center";
@@ -477,12 +477,12 @@ let board_drawer_prototype = {
 		ctx.fillStyle = colour;
 		let gx = x * this.square_size + (this.square_size / 2);
 		let gy = y * this.square_size + (this.square_size / 3) - 0.5;
-		this.fill_label(msg, gx, gy + 1);
+		this.fill_label(msg, gx, gy + 1, star_outline);
 		gy = y * this.square_size + (this.square_size * 2 / 3) + 0.5;
-		this.fill_label(msg2, gx, gy + 1);
+		this.fill_label(msg2, gx, gy + 1, star_outline);
 	},
 
-	text_three: function(x, y, msg, msg2, msg3, colour) {
+	text_three: function(x, y, msg, msg2, msg3, colour, star_outline) {
 		if (this.coordinates) x++;
 		let ctx = this.ctx;
 		ctx.textAlign = "center";
@@ -493,19 +493,19 @@ let board_drawer_prototype = {
 		let gy;
 
 		gy = y * this.square_size + (this.square_size * 0.22);
-		this.fill_label(msg, gx, gy);
+		this.fill_label(msg, gx, gy, star_outline);
 		gy = y * this.square_size + (this.square_size * 0.5);
-		this.fill_label(msg2, gx, gy + 1);
+		this.fill_label(msg2, gx, gy + 1, star_outline);
 		gy = y * this.square_size + (this.square_size * 0.78);
-		this.fill_label(msg3, gx, gy + 1);
+		this.fill_label(msg3, gx, gy + 1, star_outline);
 	},
 
 	// One line of a label, centred on gx, gy in the current font. ZERO_LOSS is
-	// drawn as a star path, so it looks the same whatever fonts are installed,
-	// in blue with a white rim to stand out from the numbers on any candidate
-	// colour.
+	// drawn as a star path, so it looks the same whatever fonts are installed:
+	// interior in blue, outline in the player-to-move's colour (black when Black
+	// is to play, white when White is to play).
 
-	fill_label: function(msg, gx, gy) {
+	fill_label: function(msg, gx, gy, star_outline = "#ffffffff") {
 		let ctx = this.ctx;
 		if (msg !== ZERO_LOSS) {
 			ctx.fillText(msg, gx, gy);
@@ -524,7 +524,7 @@ let board_drawer_prototype = {
 		ctx.closePath();
 		ctx.lineJoin = "round";
 		ctx.lineWidth = Math.max(1.5, size * 0.14);
-		ctx.strokeStyle = "#ffffffff";
+		ctx.strokeStyle = star_outline;
 		ctx.stroke();
 		ctx.fillStyle = ZERO_LOSS_BLUE;
 		ctx.fill();
@@ -619,6 +619,7 @@ let board_drawer_prototype = {
 		this.plan_labels(node);
 		this.plan_analysis_circles(node);
 		this.plan_next_markers(node);					// Should be last, since it can adjust other planned objects.
+		this.plan_stone_move_markers(node);
 
 		this.draw_canvas();
 		this.draw_node_info(node);
@@ -632,7 +633,7 @@ let board_drawer_prototype = {
 		// any_move: the move need not be on the board now, just reported (the
 		// Move Report's eval history keeps lines for moves that have left it).
 
-		if (config.editing || !point || !config.candidate_moves || !config.mouseover_pv || !node.has_valid_analysis()) {
+		if (config.editing || (hub.moving_stone && hub.moving_stone.node === node) || !point || !config.candidate_moves || !config.mouseover_pv || !node.has_valid_analysis()) {
 			return false;
 		}
 
@@ -688,6 +689,32 @@ let board_drawer_prototype = {
 		this.draw_node_info(node, info);
 		this.pv = points;
 
+		this.draw_count++;
+		return true;
+	},
+
+	draw_sequence_preview: function(node, gtp_seq) {
+		if (!node || node.destroyed || !Array.isArray(gtp_seq) || gtp_seq.length === 0) {
+			return false;
+		}
+		if (config.editing || (hub.moving_stone && hub.moving_stone.node === node)) {
+			return false;
+		}
+
+		let finalboard = node.get_board().copy();
+		let points = [];
+		for (let move of gtp_seq) {
+			let s = finalboard.parse_gtp_move(move);
+			finalboard.play(s);
+			points.push(s);
+		}
+
+		this.clear_canvases();
+		this.draw_board(finalboard);
+		this.plan_pv_labels(points);
+		this.draw_canvas();
+		this.draw_node_info(node);
+		this.pv = points;
 		this.draw_count++;
 		return true;
 	},
@@ -750,34 +777,58 @@ let board_drawer_prototype = {
 
 				// With mark_explored_moves on, explored moves (explored.js) are
 				// rounded squares, so the shape says whose search the numbers
-				// come from.
+				// come from. Candidate outline colour always signals whose turn
+				// it is (black for Black, white for White); interior shows value.
+
+				let is_black_turn = o.active === "b";
+				let player_outline = is_black_turn
+					? (o.is_best ? "#000000ff" : "#000000d8")
+					: (o.is_best ? "#ffffffff" : "#ffffffee");
+				let outline_px = o.is_best
+					? Math.max(1.25, this.square_size * 0.04)
+					: Math.max(1.0, this.square_size * 0.028);
+				let outline_frac = outline_px / this.square_size;
+				let star_outline = is_black_turn ? "#000000ff" : "#ffffffff";
 
 				if (o.explored) {
 					if (o.fill) {
 						this.frounded(x, y, 0.94, o.fill);
 					}
+					this.rounded(x, y, outline_frac, 0.94, player_outline);
 					if (o.next_mark_colour) {
-						this.rounded(x, y, 0.085, 0.94, o.next_mark_colour);
+						this.rounded(x, y, 0.085, 0.84, o.next_mark_colour);
 					}
 				} else {
 					if (o.fill) {
 						this.fcircle(x, y, 1, o.fill);
 					}
+					this.circle(x, y, outline_frac, 1, player_outline);
 					if (o.next_mark_colour) {
-						this.circle(x, y, 0.085, 1, o.next_mark_colour);
+						this.circle(x, y, 0.085, 0.88, o.next_mark_colour);
 					}
 				}
 
 				if (o.text.length >= 3) {
-					this.text_three(x, y, o.text[0], o.text[1], o.text[2], "#000000ff");
+					this.text_three(x, y, o.text[0], o.text[1], o.text[2], "#000000ff", star_outline);
 				} else if (o.text.length >= 2) {
-					this.text_two(x, y, o.text[0], o.text[1], "#000000ff");
+					this.text_two(x, y, o.text[0], o.text[1], "#000000ff", star_outline);
 				} else if (o.text.length === 1) {
-					this.text(x, y, o.text[0], "#000000ff");
+					this.text(x, y, o.text[0], "#000000ff", star_outline);
 				}
 
 				this.has_drawn_candidates = true;
 
+				break;
+
+			case "stone_move_origin":
+
+				this.circle(x, y, 0.11, 0.96, "#e0b872ff");
+				break;
+
+			case "stone_move_ghost":
+
+				this.fcircle(x, y, 0.92, o.colour === "b" ? "#00000099" : "#ffffffaa");
+				this.circle(x, y, 0.07, 0.92, o.colour === "b" ? "#e0b872ff" : "#000000cc");
 				break;
 
 			case "ko":
@@ -1052,6 +1103,8 @@ let board_drawer_prototype = {
 				text: [],
 				fill: null,
 				explored: Boolean(info.explored) && config.mark_explored_moves,
+				active: board.active,
+				is_best: info === best,
 			};
 
 			let colour;
@@ -1267,6 +1320,26 @@ let board_drawer_prototype = {
 		}
 	},
 
+	plan_stone_move_markers: function(node) {
+		if (!hub.moving_stone || hub.moving_stone.node !== node) {
+			return;
+		}
+		let {from, colour} = hub.moving_stone;
+		let fx = from.charCodeAt(0) - 97;
+		let fy = from.charCodeAt(1) - 97;
+		if (fx >= 0 && fx < this.width && fy >= 0 && fy < this.height) {
+			this.needed_marks[fx][fy] = {type: "stone_move_origin"};
+		}
+		let hover = hub.mouse_point();
+		if (hover && hover !== from && hover.length === 2 && node.get_board().state_at(hover) === "") {
+			let tx = hover.charCodeAt(0) - 97;
+			let ty = hover.charCodeAt(1) - 97;
+			if (tx >= 0 && tx < this.width && ty >= 0 && ty < this.height) {
+				this.needed_marks[tx][ty] = {type: "stone_move_ghost", colour};
+			}
+		}
+	},
+
 	// --------------------------------------------------------------------------------------------
 
 	draw_node_info: function(node, override_moveinfo) {
@@ -1284,6 +1357,13 @@ let board_drawer_prototype = {
 		}
 
 		this.infodiv_displaying_stats = true;		// We are in a normal-enough mode (including drawing the editing message, below).
+
+		if (hub.moving_stone && hub.moving_stone.node === node) {
+			let gtp = node.get_board().gtp(hub.moving_stone.from);
+			let side = hub.moving_stone.colour === "b" ? "Black" : "White";
+			this.infodiv.innerHTML = `<div class="info_bar"><div class="info_stats"><span class="info_item"><span class="info_label">Move ${side} ${safe_html(gtp)}:</span> <span class="info_value">click empty intersection (Esc to cancel)</span></span></div></div>`;
+			return;
+		}
 
 		if (config.editing) {
 			this.draw_gui_editing();

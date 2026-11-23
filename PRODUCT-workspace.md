@@ -158,70 +158,40 @@ The strip above the board is not a fixed 12-span table. It is:
   scrollable, so wheeling over Move Report or Settings scrolled the UI
   and stepped the game tree simultaneously.
 
-## Panes (board, analysis, tree, comments, …)
+## Panes and Dockview workspace (settled 2026-11-22)
 
-Anything that occupies a rectangle in the workspace is a **pane**:
-Move Quality, Game Status, Distribution, Choice Breadth, Turn, Last move, Outcome,
-Next move options, Comments, **Variation tree**, and later anything
-similar. The variation tree is not an optional extra — reviewers
-need it, the same way chess tools need the move list. Default may
-be hidden; showing it is one click (chip or Display), not a rebuild.
+All non-board panels (`history`, `options`, `corridor`, `tree`, `status`,
+`quality`, `comments`, `lastmove`, `outcome`, `breadth`, `distribution`,
+`turn`) live in a **`dockview-core` v8.9.1** workspace (`src/vendor/dockview/`,
+MIT license, vendored locally with zero build step and zero native
+dependencies — works identically on Linux, macOS, and Windows).
 
-### Target sizing model (chosen)
-
-Each pane stores `{id, visible, order, width, height}` in CSS pixels
-**at zoom 1**. Zoom scales the whole page on top. A bottom-right
-handle resizes that pane freely. Hold Shift to lock aspect ratio
-(needed for charts the user wants square-ish; off by default so
-text tables can go wide and short).
-
-On window resize, saved pane sizes do **not** change. Extra window
-space is empty; too little space scrolls that region. The user
-already chose the sizes. Auto-stretching them is how restart and
-"I just made the window a bit taller" become a new layout.
-
-The board is a pane whose box is saved. The stones are the largest
-square that fits that box. The board does not dictate the right
-column by growing to leftover height.
-
-### Options considered (and why not, as the source of truth)
-
-1. **Wrapping flex cards with one shared `move_report_width` and
-   flex-grow** (current). Easy, but every card shares one width, the
-   last row stretches, and window size changes the painted layout
-   even when saved numbers did not. Transitional only.
-2. **Nested splitters** (ChessBase / Scid style). Good for "fill the
-   window", bad for persistence: ratios *are* derived from leftover
-   space, and restoring ratios after a zoom/DPI/info-bar change is
-   an order-sensitive procedure.
-3. **Full docking libraries** (Golden Layout, phosphor, etc.).
-   Heavy, finicky, easy to serialize into a blob that only that
-   library can restore. Rejected: we need a config.json a human
-   can edit, same as `move_report_sections` today.
-4. **Absolute x,y plus free drag-to-move.** Maximum power, overlap
-   hell, off-screen widgets. Not needed until someone asks to tear
-   panes out into floating windows.
-5. **Explicit saved width×height per pane, packed in order, no
-   grow-to-fill** (chosen). The state *is* the sizes. Corner-drag
-   is the natural editor. Aspect-ratio lock is a modifier, not a
-   mode. `config.json` stays an array of panes.
-
-Until (5) is implemented, new panes (including the variation tree)
-join the existing Move Report card flow: hideable, orderable, chip
-to restore, persisted in `move_report_sections`. That is the same
-*vocabulary* (named sections, on-object controls). It is not yet
-the same *sizing* model.
-
-### Variation tree
-
-- Section id `tree`, title "VARIATION TREE".
-- Default: not in `move_report_sections` (hidden, "+ variation tree"
-  chip). Stock tree drawing and click-to-jump stay intact.
-- While it lives as a card, its canvas sizes to that card's box
-  (`tree_pane_height`, and the shared card width). It must not
-  measure itself to the window edge or subtract `comment_box_height`
-  from the viewport — comments are a sibling pane, not a grid row
-  reserved under the tree.
+- **Zero outer scrollbars; full two-axis resize.** The workspace fills the
+  right-hand viewport (`#mr_dockview`, `flex: 1 1 0; min-height: 0;`).
+  Dragging any Dockview splitter resizes adjacent panels smoothly in both X
+  and Y; all canvas charts and `#treecanvas` observe both width and height
+  via `ResizeObserver` and redraw to fill their panel box.
+- **Persistent DOM pool.** Closing a panel or switching presets parks its
+  DOM element in `#mr_panel_pool` rather than destroying `#treecanvas`,
+  `#comments`, or chart canvases.
+- **Dock, tab, split, float, maximize.** Tabs can be dragged to reorder,
+  stacked into tab groups, split horizontally/vertically, popped out into
+  floating groups, or maximized via the tab right-click context menu.
+- **Built-in presets** in `#mr_controls`:
+  - **Review** (default): Top: `[Eval History*, Move Quality]`; Bottom-Left:
+    `[Next Move Options*, Variation Space]`; Bottom-Right: `[Variation Tree*,
+    Game Status, Comments]`.
+  - **Explore**: 2×2 grid keeping Eval History, Variation Space, Next Move
+    Options, and Variation Tree visible simultaneously.
+  - **Minimal**: Top `[Next Move Options*, Variation Space]` over Bottom
+    `[Variation Tree*, Game Status, Comments]`.
+- **Persistence.** Every layout drag, split, tab switch, or panel open/close
+  persists debounced JSON into `config.workspace_layout` (and mirrors open
+  panel IDs in `config.move_report_sections` for Settings toggles). Invalid
+  or empty saved layouts fall back cleanly to the `Review` preset.
+- **Variation tree visible by default.** `tree` is docked open in all three
+  presets, and Ctrl+click stone-move setup branches draw with a gold node
+  outline (`#e0b872ff`).
 
 ## Settings pane (2026-09-26)
 
